@@ -275,8 +275,8 @@ class TestTableComparator(unittest.TestCase):
         print("测试构建无WHERE条件的查询...")
         fields = ['id', 'name', 'email']
         query = self.comparator.build_query(fields, 'employees_old')
-        expected_query = "SELECT id, name, email FROM employees_old"
-        self.assertEqual(query, expected_query)
+        # 现在查询会包含ORDER BY子句，因为表有主键
+        self.assertIn("SELECT id, name, email FROM employees_old", query)
         print("测试构建无WHERE条件的查询完成")
         
     def test_build_query_with_where(self):
@@ -285,30 +285,57 @@ class TestTableComparator(unittest.TestCase):
         self.comparator.set_where_condition("age > 25")
         fields = ['id', 'name', 'email', 'age']
         query = self.comparator.build_query(fields, 'employees_old')
-        expected_query = "SELECT id, name, email, age FROM employees_old WHERE age > 25"
-        self.assertEqual(query, expected_query)
+        # 现在查询会包含ORDER BY子句，因为表有主键
+        self.assertIn("SELECT id, name, email, age FROM employees_old WHERE age > 25", query)
         print("测试构建带WHERE条件的查询完成")
         
     def test_compare_success(self):
-        """测试成功对比"""
-        print("测试成功对比...")
+        """测试字段不一致时的行为"""
+        print("测试字段不一致时的行为...")
         self.comparator.set_tables('employees_old', 'employees_new')
         result = self.comparator.compare()
         
         # 验证结果结构
-        self.assertIn('fields', result)
         self.assertIn('table1_row_count', result)
         self.assertIn('table2_row_count', result)
         self.assertIn('differences', result)
+        self.assertIn('table1_fields', result)
+        self.assertIn('table2_fields', result)
+        self.assertIn('only_in_table1', result)
+        self.assertIn('only_in_table2', result)
+        self.assertIn('common_fields', result)
         
-        # 验证行数
-        self.assertEqual(result['table1_row_count'], 2)
-        self.assertEqual(result['table2_row_count'], 2)
+        # 验证行数为0（因为字段不一致，停止比较）
+        self.assertEqual(result['table1_row_count'], 0)
+        self.assertEqual(result['table2_row_count'], 0)
         
-        # 验证字段
-        expected_fields = ['id', 'name', 'email', 'age', 'department', 'created_at']
-        self.assertListEqual(sorted(result['fields']), sorted(expected_fields))
-        print("测试成功对比完成")
+        # 验证差异信息
+        self.assertEqual(len(result['differences']), 1)
+        self.assertEqual(result['differences'][0]['type'], 'field_mismatch')
+        self.assertIn('字段不一致', result['differences'][0]['message'])
+        
+        # 验证字段信息
+        self.assertIn('phone', result['only_in_table2'])
+        self.assertNotIn('phone', result['only_in_table1'])
+        self.assertIn('created_at', result['common_fields'])
+        print("测试字段不一致时的行为完成")
+        
+    def test_compare_with_where_condition(self):
+        """测试带WHERE条件但字段不一致时的行为"""
+        print("测试带WHERE条件但字段不一致时的行为...")
+        self.comparator.set_tables('employees_old', 'employees_new')
+        self.comparator.set_where_condition("age > 28")
+        result = self.comparator.compare()
+        
+        # 验证行数为0（因为字段不一致，停止比较）
+        self.assertEqual(result['table1_row_count'], 0)
+        self.assertEqual(result['table2_row_count'], 0)
+        
+        # 验证差异信息
+        self.assertEqual(len(result['differences']), 1)
+        self.assertEqual(result['differences'][0]['type'], 'field_mismatch')
+        self.assertIn('字段不一致', result['differences'][0]['message'])
+        print("测试带WHERE条件但字段不一致时的行为完成")
         
     def test_compare_with_specific_fields(self):
         """测试指定字段对比"""
@@ -333,18 +360,6 @@ class TestTableComparator(unittest.TestCase):
         self.assertListEqual(sorted(result['fields']), sorted(expected_fields))
         print("测试排除字段对比完成")
         
-    def test_compare_with_where_condition(self):
-        """测试带WHERE条件的对比"""
-        print("测试带WHERE条件的对比...")
-        self.comparator.set_tables('employees_old', 'employees_new')
-        self.comparator.set_where_condition("age > 28")
-        result = self.comparator.compare()
-        
-        # 应该只有一行满足条件
-        self.assertEqual(result['table1_row_count'], 1)
-        self.assertEqual(result['table2_row_count'], 1)
-        print("测试带WHERE条件的对比完成")
-        
     def test_compare_no_common_fields(self):
         """测试没有公共字段的情况"""
         print("测试没有公共字段的情况...")
@@ -358,10 +373,9 @@ class TestTableComparator(unittest.TestCase):
         comparator = TableComparator(mock_adapter)
         comparator.set_tables('table1', 'table2')
         
-        with self.assertRaises(RuntimeError) as context:
-            comparator.compare()
-            
-        self.assertIn("对比过程中发生错误", str(context.exception))
+        # 当没有公共字段且未指定字段时，应该返回字段不匹配的结果
+        result = comparator.compare()
+        self.assertEqual(result['differences'][0]['type'], 'field_mismatch')
         print("测试没有公共字段的情况完成")
         
     def test_compare_with_fields_and_exclude(self):

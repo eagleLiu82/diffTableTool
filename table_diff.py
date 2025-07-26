@@ -293,13 +293,15 @@ class TableComparator:
     支持对比同一数据库中的两个表，可以指定字段、排除字段和设置WHERE条件
     """
 
-    def __init__(self, db_adapter: DatabaseAdapter):
+    def __init__(self, db_adapter: DatabaseAdapter, db_adapter2: DatabaseAdapter = None):
         """
         初始化对比工具
         
-        :param db_adapter: 数据库适配器实例
+        :param db_adapter: 源数据库适配器实例
+        :param db_adapter2: 目标数据库适配器实例（可选，默认为None表示使用同一个数据库）
         """
-        self.db = db_adapter
+        self.db1 = db_adapter
+        self.db2 = db_adapter2 if db_adapter2 is not None else db_adapter
         self.table1 = None
         self.table2 = None
         self.fields = []
@@ -344,15 +346,19 @@ class TableComparator:
         logger.info(f"设置WHERE条件: {where_condition}")
         self.where_condition = where_condition
 
-    def get_table_fields(self, table_name: str) -> List[str]:
+    def get_table_fields(self, table_name: str, db_index: int = 1) -> List[str]:
         """
         获取表的所有字段名
         
         :param table_name: 表名
+        :param db_index: 数据库索引 (1表示源数据库, 2表示目标数据库)
         :return: 字段名列表
         """
         logger.info(f"获取表 {table_name} 的所有字段")
-        fields = self.db.get_table_fields(table_name)
+        if db_index == 1:
+            fields = self.db1.get_table_fields(table_name)
+        else:
+            fields = self.db2.get_table_fields(table_name)
         logger.info(f"表 {table_name} 的字段: {fields}")
         return fields
 
@@ -370,9 +376,9 @@ class TableComparator:
 
         # 否则获取两个表的公共字段
         logger.info(f"获取表 {self.table1} 的字段")
-        fields1 = self.get_table_fields(self.table1)
+        fields1 = self.get_table_fields(self.table1, 1)
         logger.info(f"获取表 {self.table2} 的字段")
-        fields2 = self.get_table_fields(self.table2)
+        fields2 = self.get_table_fields(self.table2, 2)
 
         # 获取公共字段
         common_fields = list(set(fields1) & set(fields2))
@@ -387,12 +393,13 @@ class TableComparator:
         logger.info(f"最终对比字段: {common_fields}")
         return common_fields
 
-    def build_query(self, fields: List[str], table_name: str) -> str:
+    def build_query(self, fields: List[str], table_name: str, db_index: int = 1) -> str:
         """
         构建查询SQL
         
         :param fields: 字段列表
         :param table_name: 表名
+        :param db_index: 数据库索引 (1表示源数据库, 2表示目标数据库)
         :return: 查询SQL语句
         """
         logger.info(f"为表 {table_name} 构建查询，字段: {fields}")
@@ -405,7 +412,7 @@ class TableComparator:
             logger.info(f"添加WHERE条件: {self.where_condition}")
         
         # 尝试获取主键进行排序
-        primary_keys = self.db.get_primary_keys(table_name)
+        primary_keys = self.db1.get_primary_keys(table_name) if db_index == 1 else self.db2.get_primary_keys(table_name)
         if primary_keys:
             order_by_fields = ', '.join(primary_keys)
             query += f" ORDER BY {order_by_fields}"
@@ -413,7 +420,8 @@ class TableComparator:
         # 如果没有主键，使用所有字段进行排序
         else:
             # 为PostgreSQL添加ORDER BY以确保结果顺序一致
-            if isinstance(self.db, PostgreSQLAdapter):
+            db = self.db1 if db_index == 1 else self.db2
+            if isinstance(db, PostgreSQLAdapter):
                 order_by_fields = ', '.join(fields)
                 query += f" ORDER BY {order_by_fields}"
                 logger.info(f"添加ORDER BY所有字段: {order_by_fields}")
@@ -435,34 +443,46 @@ class TableComparator:
             logger.info("开始执行表对比")
             # 获取两个表的所有字段
             logger.info(f"获取表 {self.table1} 的字段")
-            fields1 = self.get_table_fields(self.table1)
+            fields1 = self.get_table_fields(self.table1, 1)
             logger.info(f"获取表 {self.table2} 的字段")
-            fields2 = self.get_table_fields(self.table2)
+            fields2 = self.get_table_fields(self.table2, 2)
             
-            # 检查字段是否完全一致（仅在未指定fields且未指定exclude_fields时检查）
-            if not self.fields and not self.exclude_fields and set(fields1) != set(fields2):
-                logger.warning(f"表 {self.table1} 和 {self.table2} 的字段不完全一致")
-                # 获取差异字段
-                only_in_table1 = list(set(fields1) - set(fields2))
-                only_in_table2 = list(set(fields2) - set(fields1))
-                common_fields = list(set(fields1) & set(fields2))
-                
-                result = {
-                    'fields': common_fields,
-                    'table1_row_count': 0,
-                    'table2_row_count': 0,
-                    'differences': [{
-                        'type': 'field_mismatch',
-                        'message': f'表 {self.table1} 和 {self.table2} 的字段不完全一致'
-                    }],
-                    'row_differences': [],
-                    'table1_fields': fields1,
-                    'table2_fields': fields2,
-                    'only_in_table1': only_in_table1,
-                    'only_in_table2': only_in_table2,
-                    'common_fields': common_fields
-                }
-                return result
+            # 只有在用户没有指定字段且没有指定排除字段时，才检查字段一致性
+            if not self.fields and not self.exclude_fields:
+                # 检查字段是否完全一致
+                if set(fields1) != set(fields2):
+                    # 获取公共字段
+                    common_fields = list(set(fields1) & set(fields2))
+                    
+                    # 字段不一致，返回字段不匹配
+                    logger.warning(f"表 {self.table1} 和 {self.table2} 字段不一致")
+                    # 获取差异字段
+                    only_in_table1 = list(set(fields1) - set(fields2))
+                    only_in_table2 = list(set(fields2) - set(fields1))
+                    
+                    result = {
+                        'fields': [],
+                        'table1_row_count': 0,
+                        'table2_row_count': 0,
+                        'differences': [{
+                            'type': 'field_mismatch',
+                            'message': f'表 {self.table1} 和 {self.table2} 字段不一致',
+                            'details': {
+                                'table1_fields': fields1,
+                                'table2_fields': fields2,
+                                'only_in_table1': only_in_table1,
+                                'only_in_table2': only_in_table2,
+                                'common_fields': common_fields
+                            }
+                        }],
+                        'row_differences': [],
+                        'table1_fields': fields1,
+                        'table2_fields': fields2,
+                        'only_in_table1': only_in_table1,
+                        'only_in_table2': only_in_table2,
+                        'common_fields': common_fields
+                    }
+                    return result
             
             # 获取要对比的字段
             logger.info("获取对比字段")
@@ -476,17 +496,17 @@ class TableComparator:
 
             # 构建查询语句
             logger.info("构建查询语句")
-            query1 = self.build_query(comparison_fields, self.table1)
-            query2 = self.build_query(comparison_fields, self.table2)
+            query1 = self.build_query(comparison_fields, self.table1, 1)
+            query2 = self.build_query(comparison_fields, self.table2, 2)
 
             # 执行查询
             logger.info("执行查询1")
-            cursor1 = self.db.execute_query(query1)
+            cursor1 = self.db1.execute_query(query1)
             rows1 = cursor1.fetchall()
             logger.info(f"查询1返回 {len(rows1)} 行数据")
             
             logger.info("执行查询2")
-            cursor2 = self.db.execute_query(query2)
+            cursor2 = self.db2.execute_query(query2)
             rows2 = cursor2.fetchall()
             logger.info(f"查询2返回 {len(rows2)} 行数据")
 
@@ -501,83 +521,59 @@ class TableComparator:
                 'table2_fields': fields2   # 添加表2的所有字段
             }
 
-            # 行数对比
+            # 将行数据转换为字典列表以便比较
+            logger.info(f"将行数据转换为字典列表")
+            dict_rows1 = [dict(zip(comparison_fields, row)) for row in rows1]
+            dict_rows2 = [dict(zip(comparison_fields, row)) for row in rows2]
+            
+            # 对比所有行
+            logger.info("开始对比行数据")
+            diff_count = 0
+            all_row_differences = []
+            
+            # 处理共同行数范围内的对比
+            for i in range(min(len(rows1), len(rows2))):
+                row_diff = self._compare_rows(dict_rows1[i], dict_rows2[i], i+1)
+                if row_diff:
+                    diff_count += 1
+                    all_row_differences.append(row_diff)
+            
+            # 处理多余的行（如果有的话）
             if len(rows1) != len(rows2):
                 logger.info(f"行数不同: {self.table1}有{len(rows1)}行, {self.table2}有{len(rows2)}行")
                 result['differences'].append({
                     'type': 'row_count',
                     'message': f'行数不同: {self.table1}有{len(rows1)}行, {self.table2}有{len(rows2)}行'
                 })
-                # 将行数据转换为字典列表以便比较
-                logger.info(f"对比前 {min(len(rows1), len(rows2))} 行数据")
-                dict_rows1 = [dict(zip(comparison_fields, row)) for row in rows1]
-                dict_rows2 = [dict(zip(comparison_fields, row)) for row in rows2]
                 
-                # 对比所有可用行
-                diff_count = 0
-                all_row_differences = []
-                
-                for i in range(min(len(rows1), len(rows2))):
-                    row_diff = self._compare_rows(dict_rows1[i], dict_rows2[i], i+1)
-                    if row_diff:
+                # 标记多余行
+                if len(rows1) > len(rows2):
+                    for i in range(len(rows2), len(rows1)):
+                        all_row_differences.append({
+                            'row_number': i+1,
+                            'differences': [{'field': field, 'table1_value': dict_rows1[i][field], 'table2_value': None} 
+                                           for field in comparison_fields]
+                        })
                         diff_count += 1
-                        all_row_differences.append(row_diff)
-                
-                # 如果第一个表行数较多，标记多余行
-                for i in range(len(rows2), len(rows1)):
-                    all_row_differences.append({
-                        'row_number': i+1,
-                        'differences': [{'field': field, 'table1_value': dict_rows1[i][field], 'table2_value': None} 
-                                       for field in comparison_fields]
-                    })
-                    diff_count += 1
-                
-                # 如果第二个表行数较多，标记多余行
-                for i in range(len(rows1), len(rows2)):
-                    all_row_differences.append({
-                        'row_number': i+1,
-                        'differences': [{'field': field, 'table1_value': None, 'table2_value': dict_rows2[i][field]} 
-                                       for field in comparison_fields]
-                    })
-                    diff_count += 1
-                
-                # 将所有差异添加到结果中
-                result['row_differences'] = all_row_differences
-                
-                # 添加差异计数信息
-                if diff_count > 0:
-                    result['differences'].append({
-                        'type': 'multiple_row_diff',
-                        'count': diff_count,
-                        'message': f'共有{diff_count}行存在数据差异'
-                    })
-            else:
-                # 行数相同时，进行逐行对比，记录所有差异
-                diff_count = 0
-                all_row_differences = []  # 用于收集所有差异以生成CSV报告
-                
-                if len(rows1) > 0:
-                    # 将行数据转换为字典列表以便比较
-                    logger.info(f"对比 {len(rows1)} 行数据")
-                    dict_rows1 = [dict(zip(comparison_fields, row)) for row in rows1]
-                    dict_rows2 = [dict(zip(comparison_fields, row)) for row in rows2]
-                    
-                    for i, (row1, row2) in enumerate(zip(dict_rows1, dict_rows2)):
-                        row_diff = self._compare_rows(row1, row2, i+1)
-                        if row_diff:
-                            diff_count += 1
-                            all_row_differences.append(row_diff)  # 添加到所有差异列表
-                
-                # 将所有差异添加到结果中（用于CSV报告）
-                result['row_differences'] = all_row_differences
-                
-                # 添加差异计数信息
-                if diff_count > 0:
-                    result['differences'].append({
-                        'type': 'multiple_row_diff',
-                        'count': diff_count,
-                        'message': f'共有{diff_count}行存在数据差异'
-                    })
+                else:
+                    for i in range(len(rows1), len(rows2)):
+                        all_row_differences.append({
+                            'row_number': i+1,
+                            'differences': [{'field': field, 'table1_value': None, 'table2_value': dict_rows2[i][field]} 
+                                           for field in comparison_fields]
+                        })
+                        diff_count += 1
+            
+            # 将所有差异添加到结果中
+            result['row_differences'] = all_row_differences
+            
+            # 添加差异计数信息
+            if diff_count > 0:
+                result['differences'].append({
+                    'type': 'multiple_row_diff',
+                    'count': diff_count,
+                    'message': f'共有{diff_count}行存在数据差异'
+                })
 
             logger.info("表对比完成")
             return result
@@ -708,18 +704,25 @@ def main():
     主函数，处理命令行参数并执行对比
     """
     parser = argparse.ArgumentParser(description='数据库表对比工具')
-    parser.add_argument('--db-type', choices=['sqlite', 'mysql', 'postgresql'], 
-                       default='sqlite', help='数据库类型 (默认: sqlite)')
+    # 源数据库参数
+    parser.add_argument('--source-db-type', choices=['sqlite', 'mysql', 'postgresql'], 
+                       default='sqlite', help='源数据库类型 (默认: sqlite)')
+    parser.add_argument('--source-db-path', help='源SQLite数据库文件路径')
+    parser.add_argument('--source-host', help='源数据库主机地址')
+    parser.add_argument('--source-port', type=int, help='源数据库端口')
+    parser.add_argument('--source-user', help='源数据库用户名')
+    parser.add_argument('--source-password', help='源数据库密码')
+    parser.add_argument('--source-database', help='源数据库名')
     
-    # SQLite参数
-    parser.add_argument('--db-path', help='SQLite数据库文件路径')
-    
-    # MySQL和PostgreSQL参数
-    parser.add_argument('--host', help='数据库主机地址')
-    parser.add_argument('--port', type=int, help='数据库端口')
-    parser.add_argument('--user', help='数据库用户名')
-    parser.add_argument('--password', help='数据库密码')
-    parser.add_argument('--database', help='数据库名')
+    # 目标数据库参数
+    parser.add_argument('--target-db-type', choices=['sqlite', 'mysql', 'postgresql'], 
+                       help='目标数据库类型 (默认: 与源数据库相同)')
+    parser.add_argument('--target-db-path', help='目标SQLite数据库文件路径')
+    parser.add_argument('--target-host', help='目标数据库主机地址')
+    parser.add_argument('--target-port', type=int, help='目标数据库端口')
+    parser.add_argument('--target-user', help='目标数据库用户名')
+    parser.add_argument('--target-password', help='目标数据库密码')
+    parser.add_argument('--target-database', help='目标数据库名')
     
     parser.add_argument('--table1', required=True, help='第一个表名')
     parser.add_argument('--table2', required=True, help='第二个表名')
@@ -742,38 +745,82 @@ def main():
 
     # 如果需要创建示例数据库
     if args.create_sample:
-        if not args.db_path:
-            args.db_path = 'sample.db'
-        create_sample_database(args.db_path)
-        print(f"示例数据库已创建: {args.db_path}")
+        if not args.source_db_path:
+            args.source_db_path = 'sample.db'
+        create_sample_database(args.source_db_path)
+        print(f"示例数据库已创建: {args.source_db_path}")
         return
 
     try:
         # 获取对应的数据库适配器
-        logger.info(f"获取 {args.db_type} 数据库适配器")
-        db_adapter = get_database_adapter(args.db_type)
+        logger.info(f"获取 {args.source_db_type} 源数据库适配器")
+        source_db_adapter = get_database_adapter(args.source_db_type)
         
-        # 建立数据库连接
-        if args.db_type == 'sqlite':
-            if not args.db_path:
-                raise ValueError("SQLite数据库需要指定 --db-path 参数")
-            db_adapter.connect(db_path=args.db_path)
+        # 获取目标数据库类型（如果未指定，则与源数据库相同）
+        target_db_type = args.target_db_type if args.target_db_type else args.source_db_type
+        logger.info(f"获取 {target_db_type} 目标数据库适配器")
+        target_db_adapter = get_database_adapter(target_db_type)
+        
+        # 建立源数据库连接
+        if args.source_db_type == 'sqlite':
+            if not args.source_db_path:
+                raise ValueError("SQLite数据库需要指定 --source-db-path 参数")
+            source_db_adapter.connect(db_path=args.source_db_path)
         else:
-            if not all([args.host, args.user, args.password, args.database]):
-                raise ValueError("MySQL和PostgreSQL需要指定 --host, --user, --password, --database 参数")
+            if not all([args.source_host, args.source_user, args.source_password, args.source_database]):
+                raise ValueError("MySQL和PostgreSQL需要指定 --source-host, --source-user, --source-password, --source-database 参数")
             connect_params = {
-                'host': args.host,
-                'user': args.user,
-                'password': args.password,
-                'database': args.database
+                'host': args.source_host,
+                'user': args.source_user,
+                'password': args.source_password,
+                'database': args.source_database
             }
-            if args.port:
-                connect_params['port'] = args.port
-            db_adapter.connect(**connect_params)
+            if args.source_port:
+                connect_params['port'] = args.source_port
+            source_db_adapter.connect(**connect_params)
+        
+        # 建立目标数据库连接
+        if target_db_type == 'sqlite':
+            if not args.target_db_path:
+                # 如果未指定目标数据库路径，则使用源数据库路径
+                if args.source_db_type == 'sqlite' and args.source_db_path:
+                    connect_params = {'db_path': args.source_db_path}
+                else:
+                    raise ValueError("目标SQLite数据库需要指定 --target-db-path 参数")
+            else:
+                connect_params = {'db_path': args.target_db_path}
+            target_db_adapter.connect(**connect_params)
+        else:
+            # 对于MySQL和PostgreSQL，如果未提供目标数据库参数，则使用源数据库参数
+            if not all([args.target_host, args.target_user, args.target_password, args.target_database]):
+                # 检查是否源数据库也是相同类型且提供了参数
+                if (args.source_db_type == target_db_type and 
+                    all([args.source_host, args.source_user, args.source_password, args.source_database])):
+                    # 使用源数据库的连接参数
+                    connect_params = {
+                        'host': args.source_host,
+                        'user': args.source_user,
+                        'password': args.source_password,
+                        'database': args.source_database
+                    }
+                    if args.source_port:
+                        connect_params['port'] = args.source_port
+                else:
+                    raise ValueError("目标MySQL和PostgreSQL需要指定 --target-host, --target-user, --target-password, --target-database 参数")
+            else:
+                connect_params = {
+                    'host': args.target_host,
+                    'user': args.target_user,
+                    'password': args.target_password,
+                    'database': args.target_database
+                }
+                if args.target_port:
+                    connect_params['port'] = args.target_port
+            target_db_adapter.connect(**connect_params)
         
         # 创建对比器实例
         logger.info("创建表对比器实例")
-        comparator = TableComparator(db_adapter)
+        comparator = TableComparator(source_db_adapter, target_db_adapter)
         comparator.set_tables(args.table1, args.table2)
         
         if args.fields:
@@ -809,7 +856,8 @@ def main():
                 print(f"两个表共有的字段: {','.join(result['common_fields'])}")
                 
             print("请使用 --fields 参数指定要对比的字段。")
-            db_adapter.close()
+            source_db_adapter.close()
+            target_db_adapter.close()
             return
             
         print(f"字段列表: {', '.join(result['fields'])}")
@@ -857,7 +905,8 @@ def main():
 
         # 关闭数据库连接
         logger.info("关闭数据库连接")
-        db_adapter.close()
+        source_db_adapter.close()
+        target_db_adapter.close()
         
     except Exception as e:
         logger.error(f"执行出错: {str(e)}", exc_info=True)
@@ -866,13 +915,20 @@ def main():
 
 
 def run_comparison(
-    db_type: str,
-    db_path: str = None,
-    host: str = None,
-    port: int = None,
-    user: str = None,
-    password: str = None,
-    database: str = None,
+    source_db_type: str,
+    source_db_path: str = None,
+    source_host: str = None,
+    source_port: int = None,
+    source_user: str = None,
+    source_password: str = None,
+    source_database: str = None,
+    target_db_type: str = None,
+    target_db_path: str = None,
+    target_host: str = None,
+    target_port: int = None,
+    target_user: str = None,
+    target_password: str = None,
+    target_database: str = None,
     table1: str = None,
     table2: str = None,
     fields: List[str] = None,
@@ -883,13 +939,20 @@ def run_comparison(
     """
     以编程方式运行表对比工具
 
-    :param db_type: 数据库类型 ('sqlite', 'mysql', 'postgresql')
-    :param db_path: SQLite数据库文件路径（仅用于SQLite）
-    :param host: 数据库主机地址（非SQLite使用）
-    :param port: 数据库端口（非SQLite使用）
-    :param user: 数据库用户名（非SQLite使用）
-    :param password: 数据库密码（非SQLite使用）
-    :param database: 数据库名（非SQLite使用）
+    :param source_db_type: 源数据库类型 ('sqlite', 'mysql', 'postgresql')
+    :param source_db_path: 源SQLite数据库文件路径（仅用于SQLite）
+    :param source_host: 源数据库主机地址（非SQLite使用）
+    :param source_port: 源数据库端口（非SQLite使用）
+    :param source_user: 源数据库用户名（非SQLite使用）
+    :param source_password: 源数据库密码（非SQLite使用）
+    :param source_database: 源数据库名（非SQLite使用）
+    :param target_db_type: 目标数据库类型 ('sqlite', 'mysql', 'postgresql')，默认与源数据库相同
+    :param target_db_path: 目标SQLite数据库文件路径（仅用于SQLite）
+    :param target_host: 目标数据库主机地址（非SQLite使用）
+    :param target_port: 目标数据库端口（非SQLite使用）
+    :param target_user: 目标数据库用户名（非SQLite使用）
+    :param target_password: 目标数据库密码（非SQLite使用）
+    :param target_database: 目标数据库名（非SQLite使用）
     :param table1: 第一个表名
     :param table2: 第二个表名
     :param fields: 指定要对比的字段列表
@@ -900,29 +963,60 @@ def run_comparison(
     """
     logger.info("开始以编程方式运行表对比")
     
-    # 获取对应的数据库适配器
-    db_adapter = get_database_adapter(db_type)
+    # 获取源数据库适配器
+    source_db_adapter = get_database_adapter(source_db_type)
     
-    # 建立数据库连接
-    if db_type == 'sqlite':
-        if not db_path:
-            raise ValueError("SQLite数据库需要指定 db_path 参数")
-        db_adapter.connect(db_path=db_path)
+    # 获取目标数据库类型（如果未指定，则与源数据库相同）
+    if target_db_type is None:
+        target_db_type = source_db_type
+    
+    # 获取目标数据库适配器
+    target_db_adapter = get_database_adapter(target_db_type)
+    
+    # 建立源数据库连接
+    if source_db_type == 'sqlite':
+        if not source_db_path:
+            raise ValueError("SQLite数据库需要指定 source_db_path 参数")
+        source_db_adapter.connect(db_path=source_db_path)
     else:
-        if not all([host, user, password, database]):
-            raise ValueError("MySQL和PostgreSQL需要指定 host, user, password, database 参数")
+        if not all([source_host, source_user, source_password, source_database]):
+            raise ValueError("MySQL和PostgreSQL需要指定 source_host, source_user, source_password, source_database 参数")
         connect_params = {
-            'host': host,
-            'user': user,
-            'password': password,
-            'database': database
+            'host': source_host,
+            'user': source_user,
+            'password': source_password,
+            'database': source_database
         }
-        if port:
-            connect_params['port'] = port
-        db_adapter.connect(**connect_params)
+        if source_port:
+            connect_params['port'] = source_port
+        source_db_adapter.connect(**connect_params)
+
+    # 建立目标数据库连接
+    if target_db_type == 'sqlite':
+        if not target_db_path:
+            # 如果未指定目标数据库路径，则使用源数据库路径
+            if source_db_type == 'sqlite' and source_db_path:
+                connect_params = {'db_path': source_db_path}
+            else:
+                raise ValueError("目标SQLite数据库需要指定 target_db_path 参数")
+        else:
+            connect_params = {'db_path': target_db_path}
+        target_db_adapter.connect(**connect_params)
+    else:
+        if not all([target_host, target_user, target_password, target_database]):
+            raise ValueError("目标MySQL和PostgreSQL需要指定 target_host, target_user, target_password, target_database 参数")
+        connect_params = {
+            'host': target_host,
+            'user': target_user,
+            'password': target_password,
+            'database': target_database
+        }
+        if target_port:
+            connect_params['port'] = target_port
+        target_db_adapter.connect(**connect_params)
 
     # 创建对比器实例
-    comparator = TableComparator(db_adapter)
+    comparator = TableComparator(source_db_adapter, target_db_adapter)
     comparator.set_tables(table1, table2)
     
     if fields:
@@ -949,7 +1043,8 @@ def run_comparison(
     
     # 关闭数据库连接
     logger.info("关闭数据库连接")
-    db_adapter.close()
+    source_db_adapter.close()
+    target_db_adapter.close()
     
     return result
 
