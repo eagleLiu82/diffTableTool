@@ -395,27 +395,23 @@ class TableComparator:
             query += f" WHERE {self.where_condition}"
             logger.info(f"添加WHERE条件: {self.where_condition}")
         
-        # 为PostgreSQL添加ORDER BY以确保结果顺序一致
-        if isinstance(self.db, PostgreSQLAdapter):
-            # 尝试获取主键进行排序
-            primary_keys = self.db.get_primary_keys(table_name)
-            if primary_keys:
-                order_by_fields = ', '.join(primary_keys)
-                query += f" ORDER BY {order_by_fields}"
-                logger.info(f"添加ORDER BY主键: {order_by_fields}")
-            else:
-                # 如果没有主键，使用所有字段进行排序
+        # 尝试获取主键进行排序
+        primary_keys = self.db.get_primary_keys(table_name)
+        if primary_keys:
+            order_by_fields = ', '.join(primary_keys)
+            query += f" ORDER BY {order_by_fields}"
+            logger.info(f"添加ORDER BY主键: {order_by_fields}")
+        # 如果没有主键，使用所有字段进行排序
+        else:
+            # 为PostgreSQL添加ORDER BY以确保结果顺序一致
+            if isinstance(self.db, PostgreSQLAdapter):
                 order_by_fields = ', '.join(fields)
                 query += f" ORDER BY {order_by_fields}"
                 logger.info(f"添加ORDER BY所有字段: {order_by_fields}")
-        # 为其他数据库也添加排序以确保一致性
-        else:
-            # 尝试获取主键进行排序
-            primary_keys = self.db.get_primary_keys(table_name)
-            if primary_keys:
-                order_by_fields = ', '.join(primary_keys)
-                query += f" ORDER BY {order_by_fields}"
-                logger.info(f"添加ORDER BY主键: {order_by_fields}")
+            # 为其他数据库也添加排序以确保一致性
+            else:
+                # 对于非PostgreSQL数据库，如果有主键就按主键排序，否则不强制排序
+                pass
         
         logger.info(f"构建完成的查询: {query}")
         return query
@@ -495,21 +491,53 @@ class TableComparator:
                     'type': 'row_count',
                     'message': f'行数不同: {self.table1}有{len(rows1)}行, {self.table2}有{len(rows2)}行'
                 })
-                # 行数不同时，只对比前几行的第一条差异
-                min_rows = min(len(rows1), len(rows2))
-                if min_rows > 0:
-                    # 将行数据转换为字典列表以便比较
-                    logger.info("对比第一行数据")
-                    dict_rows1 = [dict(zip(comparison_fields, row)) for row in rows1]
-                    dict_rows2 = [dict(zip(comparison_fields, row)) for row in rows2]
-                    
-                    row_diff = self._compare_rows(dict_rows1[0], dict_rows2[0], 1)
-                    if row_diff:
-                        result['row_differences'].append(row_diff)
-            else:
-                # 行数相同时，进行逐行对比，记录所有差异但只返回第一条用于简要显示
+                # 将行数据转换为字典列表以便比较
+                logger.info(f"对比前 {min(len(rows1), len(rows2))} 行数据")
+                dict_rows1 = [dict(zip(comparison_fields, row)) for row in rows1]
+                dict_rows2 = [dict(zip(comparison_fields, row)) for row in rows2]
+                
+                # 对比所有可用行
                 diff_count = 0
-                first_diff = None
+                all_row_differences = []
+                
+                for i in range(min(len(rows1), len(rows2))):
+                    row_diff = self._compare_rows(dict_rows1[i], dict_rows2[i], i+1)
+                    if row_diff:
+                        diff_count += 1
+                        all_row_differences.append(row_diff)
+                
+                # 如果第一个表行数较多，标记多余行
+                for i in range(len(rows2), len(rows1)):
+                    all_row_differences.append({
+                        'row_number': i+1,
+                        'differences': [{'field': field, 'table1_value': dict_rows1[i][field], 'table2_value': None} 
+                                       for field in comparison_fields]
+                    })
+                    diff_count += 1
+                
+                # 如果第二个表行数较多，标记多余行
+                for i in range(len(rows1), len(rows2)):
+                    all_row_differences.append({
+                        'row_number': i+1,
+                        'differences': [{'field': field, 'table1_value': None, 'table2_value': dict_rows2[i][field]} 
+                                       for field in comparison_fields]
+                    })
+                    diff_count += 1
+                
+                # 将所有差异添加到结果中
+                result['row_differences'] = all_row_differences
+                
+                # 添加差异计数信息
+                if diff_count > 0:
+                    result['differences'].append({
+                        'type': 'multiple_row_diff',
+                        'count': diff_count,
+                        'message': f'共有{diff_count}行存在数据差异'
+                    })
+            else:
+                # 行数相同时，进行逐行对比，记录所有差异
+                diff_count = 0
+                all_row_differences = []  # 用于收集所有差异以生成CSV报告
                 
                 if len(rows1) > 0:
                     # 将行数据转换为字典列表以便比较
@@ -521,19 +549,18 @@ class TableComparator:
                         row_diff = self._compare_rows(row1, row2, i+1)
                         if row_diff:
                             diff_count += 1
-                            if first_diff is None:
-                                first_diff = row_diff
-                                
-                    # 将第一条差异添加到结果中（用于简要显示）
-                    if first_diff is not None:
-                        result['row_differences'].append(first_diff)
-                        # 添加差异计数信息
-                        if diff_count > 1:
-                            result['differences'].append({
-                                'type': 'multiple_row_diff',
-                                'count': diff_count,
-                                'message': f'共有{diff_count}行存在数据差异'
-                            })
+                            all_row_differences.append(row_diff)  # 添加到所有差异列表
+                
+                # 将所有差异添加到结果中（用于CSV报告）
+                result['row_differences'] = all_row_differences
+                
+                # 添加差异计数信息
+                if diff_count > 0:
+                    result['differences'].append({
+                        'type': 'multiple_row_diff',
+                        'count': diff_count,
+                        'message': f'共有{diff_count}行存在数据差异'
+                    })
 
             logger.info("表对比完成")
             return result
@@ -575,6 +602,37 @@ class TableComparator:
         
         logger.debug(f"第 {row_number} 行无差异")
         return None
+
+    def generate_csv_report(self, result: Dict[str, Any], output_file: str) -> None:
+        """
+        生成CSV格式的详细差异报告
+        
+        :param result: 对比结果
+        :param output_file: 输出文件路径
+        """
+        import csv
+        
+        logger.info(f"生成CSV报告到文件: {output_file}")
+        
+        with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['row_number', 'column_name', 'table1_value', 'table2_value']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+            writer.writeheader()
+            
+            # 遍历所有行差异
+            if 'row_differences' in result:
+                for row_diff in result['row_differences']:
+                    row_number = row_diff['row_number']
+                    for diff in row_diff['differences']:
+                        writer.writerow({
+                            'row_number': row_number,
+                            'column_name': diff['field'],
+                            'table1_value': diff['table1_value'],
+                            'table2_value': diff['table2_value']
+                        })
+        
+        logger.info("CSV报告生成完成")
 
 
 def create_sample_database(db_path: str):
@@ -653,6 +711,7 @@ def main():
     parser.add_argument('--where', help='WHERE条件')
     parser.add_argument('--create-sample', action='store_true', help='创建示例数据库')
     parser.add_argument('--detailed', action='store_true', help='显示详细差异信息')
+    parser.add_argument('--csv-report', help='生成CSV格式的详细差异报告到指定文件')
     parser.add_argument('--verbose', '-v', action='store_true', help='显示详细日志')
 
     args = parser.parse_args()
@@ -761,6 +820,15 @@ def main():
         elif not result['differences']:
             print("未发现明显差异")
 
+        # 生成CSV报告
+        if args.csv_report:
+            try:
+                comparator.generate_csv_report(result, args.csv_report)
+                print(f"\n已生成CSV详细差异报告到: {args.csv_report}")
+            except Exception as e:
+                logger.error(f"生成CSV报告失败: {str(e)}", exc_info=True)
+                print(f"生成CSV报告失败: {str(e)}")
+
         # 关闭数据库连接
         logger.info("关闭数据库连接")
         db_adapter.close()
@@ -783,7 +851,8 @@ def run_comparison(
     table2: str = None,
     fields: List[str] = None,
     exclude: List[str] = None,
-    where: str = None
+    where: str = None,
+    csv_report: str = None
 ) -> Dict[str, Any]:
     """
     以编程方式运行表对比工具
@@ -800,6 +869,7 @@ def run_comparison(
     :param fields: 指定要对比的字段列表
     :param exclude: 指定要排除的字段列表
     :param where: WHERE条件字符串
+    :param csv_report: CSV报告输出文件路径
     :return: 对比结果字典
     """
     logger.info("开始以编程方式运行表对比")
@@ -842,6 +912,14 @@ def run_comparison(
     logger.info(f"开始对比表 {table1} 和 {table2}")
     result = comparator.compare()
     logger.info("对比完成")
+    
+    # 生成CSV报告
+    if csv_report:
+        try:
+            comparator.generate_csv_report(result, csv_report)
+            logger.info(f"已生成CSV详细差异报告到: {csv_report}")
+        except Exception as e:
+            logger.error(f"生成CSV报告失败: {str(e)}", exc_info=True)
     
     # 关闭数据库连接
     logger.info("关闭数据库连接")

@@ -33,7 +33,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "table-diff=table_diff:main",
+            "table_diff=table_diff:main",
         ],
     },
 )

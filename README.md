@@ -9,11 +9,17 @@
 - 支持添加 WHERE 条件进行过滤
 - 智能处理表结构差异
 - 详细的差异报告
-- 自动处理PostgreSQL查询顺序问题
+- 自动处理查询顺序问题，确保结果一致性
+- 生成CSV格式的详细差异报告
 
-## 安装依赖
+## 安装
 
-```
+首先克隆或下载此项目，然后安装依赖：
+
+```bash
+# 安装基础依赖
+pip install -e .
+
 # 对于MySQL支持
 pip install mysql-connector-python
 
@@ -24,6 +30,21 @@ pip install psycopg2
 ## 使用方法
 
 ### 基本用法
+
+安装后，你可以使用简化命令：
+
+```bash
+# 对比SQLite数据库中的两个表
+table_diff --db-path database.db --table1 users_old --table2 users_new
+
+# 对比MySQL数据库中的两个表
+table_diff --db-type mysql --host localhost --port 3306 --user root --password your_password --database your_database --table1 users_old --table2 users_new
+
+# 对比PostgreSQL数据库中的两个表
+table_diff --db-type postgresql --host localhost --port 5432 --user postgres --password your_password --database your_database --table1 users_old --table2 users_new
+```
+
+或者使用Python脚本方式：
 
 ```bash
 # 对比SQLite数据库中的两个表
@@ -40,37 +61,51 @@ python table_diff.py --db-type postgresql --host localhost --port 5432 --user po
 
 ```bash
 # 只对比指定的字段
-python table_diff.py --db-type sqlite --db-path database.db --table1 users_old --table2 users_new --fields name email age
+table_diff --db-path database.db --table1 users_old --table2 users_new --fields name email age
 ```
 
 ### 排除字段对比
 
 ```bash
 # 排除特定字段进行对比
-python table_diff.py --db-type sqlite --db-path database.db --table1 users_old --table2 users_new --exclude created_at
+table_diff --db-path database.db --table1 users_old --table2 users_new --exclude created_at
 ```
-
-当使用 `--exclude` 参数时，即使两个表的字段不完全一致，工具也会继续进行比对，只对比两个表的公共字段中未被排除的字段。
 
 ### 添加WHERE条件
 
 ```bash
 # 添加WHERE条件进行过滤
-python table_diff.py --db-type sqlite --db-path database.db --table1 users_old --table2 users_new --where "age > 18"
+table_diff --db-path database.db --table1 users_old --table2 users_new --where "age > 18"
 ```
 
 ### 显示详细差异
 
 ```bash
 # 显示详细的行差异信息
-python table_diff.py --db-type sqlite --db-path database.db --table1 users_old --table2 users_new --detailed
+table_diff --db-path database.db --table1 users_old --table2 users_new --detailed
 ```
+
+### 生成CSV详细差异报告
+
+```bash
+# 生成CSV格式的详细差异报告
+table_diff --db-path database.db --table1 users_old --table2 users_new --csv-report differences.csv
+
+# 生成CSV报告并指定字段
+table_diff --db-path database.db --table1 users_old --table2 users_new --fields name age --csv-report differences.csv
+```
+
+CSV报告将包含以下字段：
+- `row_number`: 行号
+- `column_name`: 列名
+- `table1_value`: 第一个表中的值
+- `table2_value`: 第二个表中的值
 
 ### 创建示例数据库
 
 ```bash
 # 创建一个示例数据库用于测试
-python table_diff.py --create-sample [--db-path sample.db]
+table_diff --create-sample [--db-path sample.db]
 ```
 
 ## 字段一致性检查
@@ -80,13 +115,15 @@ python table_diff.py --create-sample [--db-path sample.db]
 1. 使用 `--fields` 参数指定特定字段时，会忽略字段一致性检查
 2. 使用 `--exclude` 参数排除特定字段时，会忽略字段一致性检查
 
-## PostgreSQL查询顺序处理
+## 查询顺序处理
 
-为确保在PostgreSQL中查询结果的一致性，工具会自动为查询添加ORDER BY子句：
+为确保在所有数据库中查询结果的一致性，工具会自动为查询添加ORDER BY子句：
 
 1. 如果表有主键，会按照主键字段排序
-2. 如果表没有主键，会按照所有查询字段排序
-3. 这确保了即使在PostgreSQL中也能正确对比行数据
+2. 如果表没有主键：
+   - 对于PostgreSQL，会按照所有查询字段排序
+   - 对于其他数据库，保持查询结果的自然顺序
+3. 这确保了在所有支持的数据库中都能正确对比行数据
 
 ## 差异报告说明
 
@@ -95,6 +132,7 @@ python table_diff.py --create-sample [--db-path sample.db]
 1. **行数差异**：两个表的行数不同时会报告
 2. **字段差异**：相同行位置但字段值不同时会报告
 3. **字段列表**：显示实际用于对比的字段
+4. **CSV详细报告**：包含所有差异的详细信息，格式为CSV
 
 ## 测试
 
@@ -132,6 +170,7 @@ python tests/test_table_diff.py
 | --exclude | 指定要排除的字段 | 否 |
 | --where | WHERE条件 | 否 |
 | --detailed | 显示详细差异信息 | 否 |
+| --csv-report | 生成CSV格式的详细差异报告到指定文件 | 否 |
 | --create-sample | 创建示例数据库 | 否 |
 
 ## 示例
@@ -140,44 +179,49 @@ python tests/test_table_diff.py
 
 创建示例数据库：
 ```bash
-python table_diff.py --db-type sqlite --db-path sample.db --create-sample
+table_diff --db-path sample.db --create-sample
 ```
 
 对比两个用户表的所有字段：
 ```bash
-python table_diff.py --db-type sqlite --db-path sample.db --table1 users_old --table2 users_new
+table_diff --db-path sample.db --table1 users_old --table2 users_new
 ```
 
 只对比用户名和邮箱字段：
 ```bash
-python table_diff.py --db-type sqlite --db-path sample.db --table1 users_old --table2 users_new --fields name email
+table_diff --db-path sample.db --table1 users_old --table2 users_new --fields name email
 ```
 
 对比所有字段但排除创建时间字段：
 ```bash
-python table_diff.py --db-type sqlite --db-path sample.db --table1 users_old --table2 users_new --exclude created_at
+table_diff --db-path sample.db --table1 users_old --table2 users_new --exclude created_at
 ```
 
 只对比年龄大于20的用户：
 ```bash
-python table_diff.py --db-type sqlite --db-path sample.db --table1 users_old --table2 users_new --where "age > 20"
+table_diff --db-path sample.db --table1 users_old --table2 users_new --where "age > 20"
 ```
 
 显示详细差异信息：
 ```bash
-python table_diff.py --db-type sqlite --db-path sample.db --table1 users_old --table2 users_new --detailed
+table_diff --db-path sample.db --table1 users_old --table2 users_new --detailed
+```
+
+生成CSV详细差异报告：
+```bash
+table_diff --db-path sample.db --table1 users_old --table2 users_new --csv-report differences.csv
 ```
 
 ### MySQL示例
 
-```
-python table_diff.py --db-type mysql --host localhost --port 3306 --user root --password password123 --database myapp --table1 users_old --table2 users_new
+```bash
+table_diff --db-type mysql --host localhost --port 3306 --user root --password password123 --database myapp --table1 users_old --table2 users_new --csv-report differences.csv
 ```
 
 ### PostgreSQL示例
 
-```
-python table_diff.py --db-type postgresql --host localhost --port 5432 --user postgres --password password123 --database myapp --table1 users_old --table2 users_new
+```bash
+table_diff --db-type postgresql --host localhost --port 5432 --user postgres --password password123 --database myapp --table1 users_old --table2 users_new --csv-report differences.csv
 ```
 
 ## 输出说明
@@ -193,6 +237,8 @@ python table_diff.py --db-type postgresql --host localhost --port 5432 --user po
 - 行数不同的情况
 - 具体每行中哪些字段的值不同（使用`--detailed`参数时）
 
+CSV报告包含所有差异的详细信息，每行一个差异记录，包括行号、列名和两个表中的值。
+
 ## 类说明
 
 ### TableComparator 类
@@ -204,6 +250,7 @@ python table_diff.py --db-type postgresql --host localhost --port 5432 --user po
 - `set_exclude_fields(exclude_fields)`: 设置要排除的字段
 - `set_where_condition(where_condition)`: 设置WHERE条件
 - `compare()`: 执行对比并返回结果
+- `generate_csv_report(result, output_file)`: 生成CSV格式的详细差异报告
 
 ### DatabaseAdapter 类族
 
