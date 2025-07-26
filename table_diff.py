@@ -278,6 +278,15 @@ def get_database_adapter(db_type: str) -> DatabaseAdapter:
     return adapters[db_type]()
 
 
+# 自定义Action类用于处理逗号分隔的参数
+class CommaSeparatedArgsAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if isinstance(values, str):
+            # 如果输入是字符串，则按逗号分割
+            values = [v.strip() for v in values.split(',') if v.strip()]
+        setattr(namespace, self.dest, values)
+
+
 class TableComparator:
     """
     数据库表对比工具类
@@ -433,8 +442,13 @@ class TableComparator:
             # 检查字段是否完全一致（仅在未指定fields且未指定exclude_fields时检查）
             if not self.fields and not self.exclude_fields and set(fields1) != set(fields2):
                 logger.warning(f"表 {self.table1} 和 {self.table2} 的字段不完全一致")
+                # 获取差异字段
+                only_in_table1 = list(set(fields1) - set(fields2))
+                only_in_table2 = list(set(fields2) - set(fields1))
+                common_fields = list(set(fields1) & set(fields2))
+                
                 result = {
-                    'fields': [],
+                    'fields': common_fields,
                     'table1_row_count': 0,
                     'table2_row_count': 0,
                     'differences': [{
@@ -443,7 +457,10 @@ class TableComparator:
                     }],
                     'row_differences': [],
                     'table1_fields': fields1,
-                    'table2_fields': fields2
+                    'table2_fields': fields2,
+                    'only_in_table1': only_in_table1,
+                    'only_in_table2': only_in_table2,
+                    'common_fields': common_fields
                 }
                 return result
             
@@ -706,8 +723,8 @@ def main():
     
     parser.add_argument('--table1', required=True, help='第一个表名')
     parser.add_argument('--table2', required=True, help='第二个表名')
-    parser.add_argument('--fields', nargs='*', help='指定要对比的字段（默认对比所有字段）')
-    parser.add_argument('--exclude', nargs='*', help='指定要排除的字段')
+    parser.add_argument('--fields', action=CommaSeparatedArgsAction, help='指定要对比的字段，多个字段用逗号分隔（默认对比所有字段）')
+    parser.add_argument('--exclude', action=CommaSeparatedArgsAction, help='指定要排除的字段，多个字段用逗号分隔')
     parser.add_argument('--where', help='WHERE条件')
     parser.add_argument('--create-sample', action='store_true', help='创建示例数据库')
     parser.add_argument('--detailed', action='store_true', help='显示详细差异信息')
@@ -782,6 +799,15 @@ def main():
             print(f"发现差异: {result['differences'][0]['message']}")
             print(f"表 {args.table1} 的字段: {', '.join(result['table1_fields'])}")
             print(f"表 {args.table2} 的字段: {', '.join(result['table2_fields'])}")
+            
+            # 显示差异字段
+            if result['only_in_table1']:
+                print(f"仅在表 {args.table1} 中存在的字段: {','.join(result['only_in_table1'])}")
+            if result['only_in_table2']:
+                print(f"仅在表 {args.table2} 中存在的字段: {','.join(result['only_in_table2'])}")
+            if result['common_fields']:
+                print(f"两个表共有的字段: {','.join(result['common_fields'])}")
+                
             print("请使用 --fields 参数指定要对比的字段。")
             db_adapter.close()
             return

@@ -60,15 +60,15 @@ python table_diff.py --db-type postgresql --host localhost --port 5432 --user po
 ### 指定字段对比
 
 ```bash
-# 只对比指定的字段
-table_diff --db-path database.db --table1 users_old --table2 users_new --fields name email age
+# 只对比指定的字段（使用逗号分隔多个字段）
+table_diff --db-path database.db --table1 users_old --table2 users_new --fields "name,email,age"
 ```
 
 ### 排除字段对比
 
 ```bash
-# 排除特定字段进行对比
-table_diff --db-path database.db --table1 users_old --table2 users_new --exclude created_at
+# 排除特定字段进行对比（使用逗号分隔多个字段）
+table_diff --db-path database.db --table1 users_old --table2 users_new --exclude "created_at,phone"
 ```
 
 ### 添加WHERE条件
@@ -92,7 +92,7 @@ table_diff --db-path database.db --table1 users_old --table2 users_new --detaile
 table_diff --db-path database.db --table1 users_old --table2 users_new --csv-report differences.csv
 
 # 生成CSV报告并指定字段
-table_diff --db-path database.db --table1 users_old --table2 users_new --fields name age --csv-report differences.csv
+table_diff --db-path database.db --table1 users_old --table2 users_new --fields "name,age" --csv-report differences.csv
 ```
 
 CSV报告将包含以下字段：
@@ -114,6 +114,14 @@ table_diff --create-sample [--db-path sample.db]
 
 1. 使用 `--fields` 参数指定特定字段时，会忽略字段一致性检查
 2. 使用 `--exclude` 参数排除特定字段时，会忽略字段一致性检查
+
+当字段不一致时，工具会显示以下信息：
+- 两个表各自的完整字段列表
+- 仅在第一个表中存在的字段
+- 仅在第二个表中存在的字段
+- 两个表共有的字段
+
+这有助于用户了解表结构差异并决定如何进行对比。
 
 ## 查询顺序处理
 
@@ -166,8 +174,8 @@ python tests/test_table_diff.py
 |------|------|---------|
 | --table1 | 第一个表名 | 是 |
 | --table2 | 第二个表名 | 是 |
-| --fields | 指定要对比的字段（默认对比所有字段） | 否 |
-| --exclude | 指定要排除的字段 | 否 |
+| --fields | 指定要对比的字段，多个字段用逗号分隔（默认对比所有字段） | 否 |
+| --exclude | 指定要排除的字段，多个字段用逗号分隔 | 否 |
 | --where | WHERE条件 | 否 |
 | --detailed | 显示详细差异信息 | 否 |
 | --csv-report | 生成CSV格式的详细差异报告到指定文件 | 否 |
@@ -189,12 +197,12 @@ table_diff --db-path sample.db --table1 users_old --table2 users_new
 
 只对比用户名和邮箱字段：
 ```bash
-table_diff --db-path sample.db --table1 users_old --table2 users_new --fields name email
+table_diff --db-path sample.db --table1 users_old --table2 users_new --fields "name,email"
 ```
 
 对比所有字段但排除创建时间字段：
 ```bash
-table_diff --db-path sample.db --table1 users_old --table2 users_new --exclude created_at
+table_diff --db-path sample.db --table1 users_old --table2 users_new --exclude "created_at"
 ```
 
 只对比年龄大于20的用户：
@@ -262,4 +270,4 @@ CSV报告包含所有差异的详细信息，每行一个差异记录，包括�
 
 ## 扩展
 
-该工具通过适配器模式设计，可以轻松扩展以支持更多类型的数据库。只需继承[DatabaseAdapter](diffTableTool\table_diff.py#L13-L21)抽象类并实现相应的方法即可。
+该工具通过适配器模式设计，可以轻松扩展以支持更多类型的数据库。只需继承[DatabaseAdapter](file:///C:/Users/25404/diffTableTool/table_diff.py#L13-L21)抽象类并实现相应的方法即可。
