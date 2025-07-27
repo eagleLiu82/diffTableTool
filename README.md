@@ -14,6 +14,9 @@
 - 支持跨不同数据库类型比较（如SQLite与MySQL、MySQL与PostgreSQL等）
 - 向后兼容：默认情况下源和目标数据库相同
 - 当源表和目标表字段不一致时，显示差异并停止比较
+- 支持图形用户界面（GUI）和命令行界面（CLI）
+- GUI默认使用PostgreSQL数据库类型
+- GUI中源数据库配置会自动同步到目标数据库配置（除非手动修改目标配置）
 
 ## 安装
 
@@ -32,7 +35,30 @@ pip install psycopg2
 
 ## 使用方法
 
-### 基本用法
+### 图形界面方式
+
+要启动图形界面版本，可以使用以下任一方法：
+
+```
+# 使用 --gui 参数启动GUI
+table_diff --gui
+
+# 或者使用Python脚本方式启动GUI
+python table_diff.py --gui
+```
+
+图形界面提供了直观的操作方式，具有以下特点：
+
+1. 默认数据库类型为PostgreSQL
+2. 源数据库配置会自动同步到目标数据库配置，简化相同数据库配置的输入
+3. 可以方便地配置数据库连接参数、表名、字段等选项
+4. 支持在不同标签页之间切换而保留已输入的内容
+5. 可以查看对比结果
+6. 支持保存和加载配置文件（JSON格式）
+
+### 命令行方式
+
+#### 基本用法
 
 安装后，你可以使用简化命令：
 
@@ -101,8 +127,8 @@ table_diff --source-db-path database.db --table1 users_old --table2 users_new --
 ### 排除字段对比
 
 ```
-# 排除特定字段进行对比（使用逗号分隔多个字段）
-table_diff --source-db-path database.db --table1 users_old --table2 users_new --exclude-fields "created_at,phone"
+# 排除特定字段的对比
+table_diff --source-db-path database.db --table1 users_old --table2 users_new --exclude "created_at,updated_at"
 ```
 
 ### 添加WHERE条件
@@ -119,14 +145,11 @@ table_diff --source-db-path database.db --table1 users_old --table2 users_new --
 table_diff --source-db-path database.db --table1 users_old --table2 users_new --detailed
 ```
 
-### 生成CSV详细差异报告
+### 生成详细报告
 
 ```
 # 生成CSV格式的详细差异报告
-table_diff --source-db-path database.db --table1 users_old --table2 users_new --csv-report differences.csv
-
-# 生成CSV报告并指定字段
-table_diff --source-db-path database.db --table1 users_old --table2 users_new --fields "name,age" --csv-report differences.csv
+table_diff --source-db-path database.db --table1 users_old --table2 users_new --detailed --csv-report report.csv
 ```
 
 CSV报告将包含以下字段：
@@ -138,8 +161,8 @@ CSV报告将包含以下字段：
 ### 创建示例数据库
 
 ```
-# 创建一个示例数据库用于测试
-table_diff --create-sample [--source-db-path sample.db]
+# 创建示例数据库用于测试
+table_diff --create-sample --source-db-path sample.db
 ```
 
 ### 字段不一致处理

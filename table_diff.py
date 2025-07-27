@@ -6,6 +6,8 @@ import sqlite3
 from typing import List, Optional, Dict, Any, Union
 from abc import ABC, abstractmethod
 import logging
+import sys
+import os
 
 # 新增 Union 类型用于 run_comparison 参数类型提示
 
@@ -703,6 +705,21 @@ def main():
     """
     主函数，处理命令行参数并执行对比
     """
+    # 检查是否是要启动GUI
+    if len(sys.argv) > 1 and sys.argv[1] == '--gui':
+        # 尝试启动GUI版本
+        try:
+            # 添加当前目录到Python路径
+            sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+            
+            # 导入并运行GUI版本
+            from table_diff_gui import main as gui_main
+            gui_main()
+            return
+        except ImportError:
+            print("错误: 无法找到GUI模块，请确保 table_diff_gui.py 文件存在")
+            sys.exit(1)
+    
     parser = argparse.ArgumentParser(description='数据库表对比工具')
     # 源数据库参数
     parser.add_argument('--source-db-type', choices=['sqlite', 'mysql', 'postgresql'], 
@@ -733,6 +750,7 @@ def main():
     parser.add_argument('--detailed', action='store_true', help='显示详细差异信息')
     parser.add_argument('--csv-report', help='生成CSV格式的详细差异报告到指定文件')
     parser.add_argument('--verbose', '-v', action='store_true', help='显示详细日志')
+    parser.add_argument('--gui', action='store_true', help='启动图形界面')
 
     args = parser.parse_args()
 
@@ -750,7 +768,7 @@ def main():
         create_sample_database(args.source_db_path)
         print(f"示例数据库已创建: {args.source_db_path}")
         return
-
+    # (保持原有逻辑不变)
     try:
         # 获取对应的数据库适配器
         logger.info(f"获取 {args.source_db_type} 源数据库适配器")

@@ -34,6 +34,7 @@ setup(
     entry_points={
         "console_scripts": [
             "table_diff=table_diff:main",
+            "table_diff_gui=table_diff.gui:main",
         ],
     },
 )
