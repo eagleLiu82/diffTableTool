@@ -265,13 +265,222 @@ class PostgreSQLAdapter(DatabaseAdapter):
             self.connection.close()
 
 
+class OracleAdapter(DatabaseAdapter):
+    """Oracle数据库适配器"""
+    
+    def __init__(self):
+        self.connection = None
+    
+    def connect(self, **kwargs):
+        try:
+            import oracledb
+        except ImportError:
+            raise ImportError("需要安装oracledb库: pip install oracledb")
+        
+        host = kwargs.get('host', 'localhost')
+        port = kwargs.get('port', 1521)
+        user = kwargs.get('user')
+        password = kwargs.get('password')
+        database = kwargs.get('database')
+        service_name = kwargs.get('service_name')
+        
+        logger.info(f"连接到Oracle数据库: {host}:{port}, 用户: {user}, 数据库: {database}")
+        
+        # 构建DSN
+        if service_name:
+            dsn = oracledb.makedsn(host, port, service_name=service_name)
+        else:
+            dsn = oracledb.makedsn(host, port, sid=database)
+            
+        self.connection = oracledb.connect(
+            user=user,
+            password=password,
+            dsn=dsn
+        )
+        return self.connection
+    
+    def get_table_fields(self, table_name: str) -> List[str]:
+        logger.info(f"获取Oracle表 {table_name} 的字段")
+        cursor = self.connection.cursor()
+        
+        # 分离模式和表名（如果提供了模式）
+        if '.' in table_name:
+            schema, table = table_name.split('.', 1)
+        else:
+            schema = None
+            table = table_name
+            
+        # 构建查询
+        query = """
+            SELECT column_name 
+            FROM all_tab_columns 
+            WHERE table_name = UPPER(:table_name)
+        """
+        params = {'table_name': table}
+        
+        if schema:
+            query += " AND owner = UPPER(:owner)"
+            params['owner'] = schema
+            
+        query += " ORDER BY column_id"
+        
+        cursor.execute(query, params)
+        fields = [row[0].lower() for row in cursor.fetchall()]
+        logger.info(f"表 {table_name} 的字段: {fields}")
+        return fields
+    
+    def get_primary_keys(self, table_name: str) -> List[str]:
+        """获取Oracle表的主键字段"""
+        logger.info(f"获取Oracle表 {table_name} 的主键")
+        cursor = self.connection.cursor()
+        
+        # 分离模式和表名（如果提供了模式）
+        if '.' in table_name:
+            schema, table = table_name.split('.', 1)
+        else:
+            schema = None
+            table = table_name
+            
+        # 构建查询
+        query = """
+            SELECT cols.column_name
+            FROM all_constraints cons
+            JOIN all_cons_columns cols ON cons.constraint_name = cols.constraint_name
+            WHERE cons.constraint_type = 'P' 
+            AND cols.table_name = UPPER(:table_name)
+        """
+        params = {'table_name': table}
+        
+        if schema:
+            query += " AND cons.owner = UPPER(:owner) AND cols.owner = UPPER(:owner)"
+            params['owner'] = schema
+            
+        query += " ORDER BY cols.position"
+        
+        cursor.execute(query, params)
+        primary_keys = [row[0].lower() for row in cursor.fetchall()]
+        logger.info(f"表 {table_name} 的主键: {primary_keys}")
+        return primary_keys
+    
+    def execute_query(self, query: str):
+        logger.info(f"执行Oracle查询: {query}")
+        cursor = self.connection.cursor()
+        cursor.execute(query)
+        return cursor
+    
+    def close(self):
+        if self.connection:
+            logger.info("关闭Oracle数据库连接")
+            self.connection.close()
+
+
+class MSSQLAdapter(DatabaseAdapter):
+    """MSSQL数据库适配器"""
+    
+    def __init__(self):
+        self.connection = None
+    
+    def connect(self, **kwargs):
+        try:
+            import pymssql
+        except ImportError:
+            raise ImportError("需要安装pymssql库: pip install pymssql")
+        
+        host = kwargs.get('host', 'localhost')
+        port = kwargs.get('port', 1433)
+        user = kwargs.get('user')
+        password = kwargs.get('password')
+        database = kwargs.get('database')
+        
+        # 构建服务器地址
+        if port != 1433:
+            server = f"{host}:{port}"
+        else:
+            server = host
+            
+        logger.info(f"连接到MSSQL数据库: {server}, 用户: {user}, 数据库: {database}")
+        
+        self.connection = pymssql.connect(
+            server=server,
+            user=user,
+            password=password,
+            database=database
+        )
+        return self.connection
+    
+    def get_table_fields(self, table_name: str) -> List[str]:
+        logger.info(f"获取MSSQL表 {table_name} 的字段")
+        cursor = self.connection.cursor()
+        
+        # 处理可能包含模式的表名
+        if '.' in table_name:
+            parts = table_name.split('.')
+            if len(parts) == 2:
+                schema, table = parts
+            else:
+                schema, table = 'dbo', table_name
+        else:
+            schema, table = 'dbo', table_name
+            
+        cursor.execute("""
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = %s AND TABLE_SCHEMA = %s
+            ORDER BY ORDINAL_POSITION
+        """, (table, schema))
+        
+        fields = [row[0] for row in cursor.fetchall()]
+        logger.info(f"表 {table_name} 的字段: {fields}")
+        return fields
+    
+    def get_primary_keys(self, table_name: str) -> List[str]:
+        """获取MSSQL表的主键字段"""
+        logger.info(f"获取MSSQL表 {table_name} 的主键")
+        cursor = self.connection.cursor()
+        
+        # 处理可能包含模式的表名
+        if '.' in table_name:
+            parts = table_name.split('.')
+            if len(parts) == 2:
+                schema, table = parts
+            else:
+                schema, table = 'dbo', table_name
+        else:
+            schema, table = 'dbo', table_name
+            
+        cursor.execute("""
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+            WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1
+            AND TABLE_NAME = %s AND TABLE_SCHEMA = %s
+            ORDER BY ORDINAL_POSITION
+        """, (table, schema))
+        
+        primary_keys = [row[0] for row in cursor.fetchall()]
+        logger.info(f"表 {table_name} 的主键: {primary_keys}")
+        return primary_keys
+    
+    def execute_query(self, query: str):
+        logger.info(f"执行MSSQL查询: {query}")
+        cursor = self.connection.cursor()
+        cursor.execute(query)
+        return cursor
+    
+    def close(self):
+        if self.connection:
+            logger.info("关闭MSSQL数据库连接")
+            self.connection.close()
+
+
 def get_database_adapter(db_type: str) -> DatabaseAdapter:
     """根据数据库类型获取对应的适配器"""
     logger.info(f"获取数据库适配器: {db_type}")
     adapters = {
         'sqlite': SQLiteAdapter,
         'mysql': MySQLAdapter,
-        'postgresql': PostgreSQLAdapter
+        'postgresql': PostgreSQLAdapter,
+        'oracle': OracleAdapter,
+        'mssql': MSSQLAdapter
     }
     
     if db_type not in adapters:
@@ -528,48 +737,24 @@ class TableComparator:
             dict_rows1 = [dict(zip(comparison_fields, row)) for row in rows1]
             dict_rows2 = [dict(zip(comparison_fields, row)) for row in rows2]
             
-            # 对比所有行
-            logger.info("开始对比行数据")
-            diff_count = 0
-            all_row_differences = []
+            # 获取主键字段
+            primary_keys1 = self.db1.get_primary_keys(self.table1)
+            primary_keys2 = self.db2.get_primary_keys(self.table2)
+            common_primary_keys = list(set(primary_keys1) & set(primary_keys2))
             
-            # 处理共同行数范围内的对比
-            for i in range(min(len(rows1), len(rows2))):
-                row_diff = self._compare_rows(dict_rows1[i], dict_rows2[i], i+1)
-                if row_diff:
-                    diff_count += 1
-                    all_row_differences.append(row_diff)
-            
-            # 处理多余的行（如果有的话）
-            if len(rows1) != len(rows2):
-                logger.info(f"行数不同: {self.table1}有{len(rows1)}行, {self.table2}有{len(rows2)}行")
-                result['differences'].append({
-                    'type': 'row_count',
-                    'message': f'行数不同: {self.table1}有{len(rows1)}行, {self.table2}有{len(rows2)}行'
-                })
-                
-                # 标记多余行
-                if len(rows1) > len(rows2):
-                    for i in range(len(rows2), len(rows1)):
-                        all_row_differences.append({
-                            'row_number': i+1,
-                            'differences': [{'field': field, 'table1_value': dict_rows1[i][field], 'table2_value': None} 
-                                           for field in comparison_fields]
-                        })
-                        diff_count += 1
-                else:
-                    for i in range(len(rows1), len(rows2)):
-                        all_row_differences.append({
-                            'row_number': i+1,
-                            'differences': [{'field': field, 'table1_value': None, 'table2_value': dict_rows2[i][field]} 
-                                           for field in comparison_fields]
-                        })
-                        diff_count += 1
-            
-            # 将所有差异添加到结果中
-            result['row_differences'] = all_row_differences
+            # 如果两个表都有主键，且主键字段一致，则按主键进行匹配对比
+            if common_primary_keys:
+                logger.info(f"使用主键 {common_primary_keys} 进行匹配对比")
+                result['row_differences'] = self._compare_rows_by_primary_key(
+                    dict_rows1, dict_rows2, common_primary_keys, comparison_fields)
+            else:
+                # 否则按行位置进行对比
+                logger.info("没有共同主键，按行位置进行对比")
+                result['row_differences'] = self._compare_rows_by_position(
+                    dict_rows1, dict_rows2, comparison_fields)
             
             # 添加差异计数信息
+            diff_count = len(result['row_differences'])
             if diff_count > 0:
                 result['differences'].append({
                     'type': 'multiple_row_diff',
@@ -583,20 +768,144 @@ class TableComparator:
         except Exception as e:
             logger.error(f"对比过程中发生错误: {str(e)}", exc_info=True)
             raise RuntimeError(f"对比过程中发生错误: {str(e)}")
-
-    def _compare_rows(self, row1: Dict, row2: Dict, row_number: int) -> Optional[Dict]:
+            
+    def _compare_rows_by_primary_key(self, rows1: List[Dict], rows2: List[Dict], 
+                                     primary_keys: List[str], comparison_fields: List[str]) -> List[Dict]:
         """
-        对比两行数据
+        基于主键对比两组行数据
+        
+        :param rows1: 第一组行数据
+        :param rows2: 第二组行数据
+        :param primary_keys: 主键字段列表
+        :param comparison_fields: 需要对比的字段列表
+        :return: 差异列表
+        """
+        logger.info("基于主键进行行数据对比")
+        
+        # 创建基于主键的字典映射
+        rows1_dict = {}
+        for row in rows1:
+            key = tuple(row[pk] for pk in primary_keys)
+            rows1_dict[key] = row
+            
+        rows2_dict = {}
+        for row in rows2:
+            key = tuple(row[pk] for pk in primary_keys)
+            rows2_dict[key] = row
+            
+        # 收集所有主键值
+        all_keys = set(rows1_dict.keys()) | set(rows2_dict.keys())
+        logger.info(f"总共 {len(all_keys)} 个唯一主键值")
+        
+        # 对比每一行
+        differences = []
+        row_number = 1
+        
+        # 分别收集三种类型的差异
+        diff_rows = []  # 两个表中都存在但数据不同的记录
+        only_in_table1 = []  # 源表中有但目标表中没有的记录
+        only_in_table2 = []  # 目标表中有但源表中没有的记录
+        
+        for key in sorted(all_keys):  # 按主键排序，保证输出顺序一致
+            row1 = rows1_dict.get(key)
+            row2 = rows2_dict.get(key)
+            
+            if row1 is None:
+                # 只在表2中存在
+                diff = {
+                    'row_number': row_number,
+                    'type': 'only_in_table2',
+                    'key': dict(zip(primary_keys, key)),
+                    'differences': [{'field': field, 'table1_value': None, 'table2_value': row2[field]} 
+                                   for field in comparison_fields]
+                }
+                only_in_table2.append(diff)
+                differences.append(diff)
+            elif row2 is None:
+                # 只在表1中存在
+                diff = {
+                    'row_number': row_number,
+                    'type': 'only_in_table1',
+                    'key': dict(zip(primary_keys, key)),
+                    'differences': [{'field': field, 'table1_value': row1[field], 'table2_value': None} 
+                                   for field in comparison_fields]
+                }
+                only_in_table1.append(diff)
+                differences.append(diff)
+            else:
+                # 两个表中都存在，对比字段值
+                row_diff = self._compare_single_row(row1, row2, row_number, comparison_fields)
+                if row_diff:
+                    row_diff['type'] = 'different_data'
+                    row_diff['key'] = dict(zip(primary_keys, key))
+                    diff_rows.append(row_diff)
+                    differences.append(row_diff)
+                    
+            row_number += 1
+            
+        logger.info(f"基于主键对比完成，发现数据不同的记录 {len(diff_rows)} 条，源表独有记录 {len(only_in_table1)} 条，目标表独有记录 {len(only_in_table2)} 条")
+        return differences
+
+    def _compare_rows_by_position(self, rows1: List[Dict], rows2: List[Dict], 
+                                  comparison_fields: List[str]) -> List[Dict]:
+        """
+        基于行位置对比两组行数据
+        
+        :param rows1: 第一组行数据
+        :param rows2: 第二组行数据
+        :param comparison_fields: 需要对比的字段列表
+        :return: 差异列表
+        """
+        logger.info("基于行位置进行行数据对比")
+        differences = []
+        
+        # 处理共同行数范围内的对比
+        for i in range(min(len(rows1), len(rows2))):
+            row_diff = self._compare_single_row(rows1[i], rows2[i], i+1, comparison_fields)
+            if row_diff:
+                row_diff['type'] = 'different_data'
+                differences.append(row_diff)
+        
+        # 处理多余的行（如果有的话）
+        if len(rows1) != len(rows2):
+            logger.info(f"行数不同: {self.table1}有{len(rows1)}行, {self.table2}有{len(rows2)}行")
+            
+            # 标记多余行
+            if len(rows1) > len(rows2):
+                for i in range(len(rows2), len(rows1)):
+                    differences.append({
+                        'row_number': i+1,
+                        'type': 'only_in_table1',
+                        'differences': [{'field': field, 'table1_value': rows1[i][field], 'table2_value': None} 
+                                       for field in comparison_fields]
+                    })
+            else:
+                for i in range(len(rows1), len(rows2)):
+                    differences.append({
+                        'row_number': i+1,
+                        'type': 'only_in_table2',
+                        'differences': [{'field': field, 'table1_value': None, 'table2_value': rows2[i][field]} 
+                                       for field in comparison_fields]
+                    })
+        
+        logger.info(f"基于行位置对比完成，发现 {len(differences)} 个差异")
+        return differences
+
+    def _compare_single_row(self, row1: Dict, row2: Dict, row_number: int, 
+                            comparison_fields: List[str]) -> Optional[Dict]:
+        """
+        对比单行数据
         
         :param row1: 第一行数据
         :param row2: 第二行数据
         :param row_number: 行号
+        :param comparison_fields: 需要对比的字段列表
         :return: 差异信息，如果没有差异则返回None
         """
         logger.debug(f"对比第 {row_number} 行数据")
         differences = []
         
-        for field in row1.keys():
+        for field in comparison_fields:
             value1 = row1[field]
             value2 = row2[field]
             
@@ -630,7 +939,7 @@ class TableComparator:
         logger.info(f"生成CSV报告到文件: {output_file}")
         
         with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['row_number', 'column_name', 'table1_value', 'table2_value']
+            fieldnames = ['row_type', 'key_info', 'row_number', 'column_name', 'table1_value', 'table2_value']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             
             writer.writeheader()
@@ -638,14 +947,24 @@ class TableComparator:
             # 遍历所有行差异
             if 'row_differences' in result:
                 for row_diff in result['row_differences']:
+                    row_type = row_diff.get('type', 'unknown')
                     row_number = row_diff['row_number']
+                    key_info = ''
+                    
+                    # 如果有主键信息，则记录主键信息
+                    if 'key' in row_diff:
+                        key_info = ', '.join([f"{k}={v}" for k, v in row_diff['key'].items()])
+                    
                     for diff in row_diff['differences']:
-                        writer.writerow({
+                        csv_row = {
+                            'row_type': row_type,
+                            'key_info': key_info,
                             'row_number': row_number,
                             'column_name': diff['field'],
                             'table1_value': diff['table1_value'],
                             'table2_value': diff['table2_value']
-                        })
+                        }
+                        writer.writerow(csv_row)
         
         logger.info("CSV报告生成完成")
 
@@ -722,7 +1041,7 @@ def main():
     
     parser = argparse.ArgumentParser(description='数据库表对比工具')
     # 源数据库参数
-    parser.add_argument('--source-db-type', choices=['sqlite', 'mysql', 'postgresql'], 
+    parser.add_argument('--source-db-type', choices=['sqlite', 'mysql', 'postgresql', 'oracle', 'mssql'], 
                        default='sqlite', help='源数据库类型 (默认: sqlite)')
     parser.add_argument('--source-db-path', help='源SQLite数据库文件路径')
     parser.add_argument('--source-host', help='源数据库主机地址')
@@ -730,9 +1049,10 @@ def main():
     parser.add_argument('--source-user', help='源数据库用户名')
     parser.add_argument('--source-password', help='源数据库密码')
     parser.add_argument('--source-database', help='源数据库名')
+    parser.add_argument('--source-service-name', help='Oracle源数据库服务名')
     
     # 目标数据库参数
-    parser.add_argument('--target-db-type', choices=['sqlite', 'mysql', 'postgresql'], 
+    parser.add_argument('--target-db-type', choices=['sqlite', 'mysql', 'postgresql', 'oracle', 'mssql'], 
                        help='目标数据库类型 (默认: 与源数据库相同)')
     parser.add_argument('--target-db-path', help='目标SQLite数据库文件路径')
     parser.add_argument('--target-host', help='目标数据库主机地址')
@@ -740,6 +1060,7 @@ def main():
     parser.add_argument('--target-user', help='目标数据库用户名')
     parser.add_argument('--target-password', help='目标数据库密码')
     parser.add_argument('--target-database', help='目标数据库名')
+    parser.add_argument('--target-service-name', help='Oracle目标数据库服务名')
     
     parser.add_argument('--table1', required=True, help='第一个表名')
     parser.add_argument('--table2', required=True, help='第二个表名')
@@ -795,6 +1116,8 @@ def main():
             }
             if args.source_port:
                 connect_params['port'] = args.source_port
+            if args.source_db_type == 'oracle' and args.source_service_name:
+                connect_params['service_name'] = args.source_service_name
             source_db_adapter.connect(**connect_params)
         
         # 建立目标数据库连接
@@ -823,6 +1146,8 @@ def main():
                     }
                     if args.source_port:
                         connect_params['port'] = args.source_port
+                    if target_db_type == 'oracle' and args.source_service_name:
+                        connect_params['service_name'] = args.source_service_name
                 else:
                     raise ValueError("目标MySQL和PostgreSQL需要指定 --target-host, --target-user, --target-password, --target-database 参数")
             else:
@@ -834,6 +1159,8 @@ def main():
                 }
                 if args.target_port:
                     connect_params['port'] = args.target_port
+                if target_db_type == 'oracle' and args.target_service_name:
+                    connect_params['service_name'] = args.target_service_name
             target_db_adapter.connect(**connect_params)
         
         # 创建对比器实例
@@ -893,14 +1220,47 @@ def main():
         if result['row_differences']:
             if args.detailed:
                 print("\n详细行差异:")
-                for row_diff in result['row_differences']:
-                    print(f"第 {row_diff['row_number']} 行:")
-                    for diff in row_diff['differences']:
-                        print(f"  字段 '{diff['field']}': {args.table1}={diff['table1_value']}, {args.table2}={diff['table2_value']}")
-                # 如果有多个差异，显示总数量
-                multiple_diff_info = [diff for diff in result['differences'] if diff['type'] == 'multiple_row_diff']
-                if multiple_diff_info:
-                    print(f"\n总共 {multiple_diff_info[0]['count']} 行存在数据差异")
+                # 分类显示差异
+                diff_rows = [r for r in result['row_differences'] if r.get('type') == 'different_data']
+                only_in_table1 = [r for r in result['row_differences'] if r.get('type') == 'only_in_table1']
+                only_in_table2 = [r for r in result['row_differences'] if r.get('type') == 'only_in_table2']
+                
+                if diff_rows:
+                    print(f"\n[数据不同] 两个表中都存在但数据不同的记录 ({len(diff_rows)} 条):")
+                    for row_diff in diff_rows:
+                        if 'key' in row_diff:
+                            key_str = ', '.join([f"{k}={v}" for k, v in row_diff['key'].items()])
+                            print(f"  主键 {key_str}:")
+                        else:
+                            print(f"  第 {row_diff['row_number']} 行:")
+                        for diff in row_diff['differences']:
+                            print(f"    字段 '{diff['field']}': {args.table1}={diff['table1_value']}, {args.table2}={diff['table2_value']}")
+                    
+                if only_in_table1:
+                    print(f"\n[源表独有] 在 {args.table1} 中存在但 {args.table2} 中不存在的记录 ({len(only_in_table1)} 条):")
+                    for row_diff in only_in_table1:
+                        if 'key' in row_diff:
+                            key_str = ', '.join([f"{k}={v}" for k, v in row_diff['key'].items()])
+                            print(f"  主键 {key_str}:")
+                            for diff in row_diff['differences']:
+                                print(f"    {diff['field']}: {diff['table1_value']}")
+                        else:
+                            print(f"  第 {row_diff['row_number']} 行:")
+                            for diff in row_diff['differences']:
+                                print(f"    {diff['field']}: {diff['table1_value']}")
+                    
+                if only_in_table2:
+                    print(f"\n[目标表独有] 在 {args.table2} 中存在但 {args.table1} 中不存在的记录 ({len(only_in_table2)} 条):")
+                    for row_diff in only_in_table2:
+                        if 'key' in row_diff:
+                            key_str = ', '.join([f"{k}={v}" for k, v in row_diff['key'].items()])
+                            print(f"  主键 {key_str}:")
+                            for diff in row_diff['differences']:
+                                print(f"    {diff['field']}: {diff['table2_value']}")
+                        else:
+                            print(f"  第 {row_diff['row_number']} 行:")
+                            for diff in row_diff['differences']:
+                                print(f"    {diff['field']}: {diff['table2_value']}")
             else:
                 # 显示第一条差异的简要信息
                 first_diff = result['row_differences'][0]
@@ -936,17 +1296,19 @@ def run_comparison(
     source_db_type: str,
     source_db_path: str = None,
     source_host: str = None,
-    source_port: int = None,
+    source_port: Union[str, int] = None,
     source_user: str = None,
     source_password: str = None,
     source_database: str = None,
     target_db_type: str = None,
     target_db_path: str = None,
     target_host: str = None,
-    target_port: int = None,
+    target_port: Union[str, int] = None,
     target_user: str = None,
     target_password: str = None,
     target_database: str = None,
+    source_service_name: str = None,
+    target_service_name: str = None,
     table1: str = None,
     table2: str = None,
     fields: List[str] = None,
@@ -957,20 +1319,22 @@ def run_comparison(
     """
     以编程方式运行表对比工具
 
-    :param source_db_type: 源数据库类型 ('sqlite', 'mysql', 'postgresql')
+    :param source_db_type: 源数据库类型 ('sqlite', 'mysql', 'postgresql', 'oracle', 'mssql')
     :param source_db_path: 源SQLite数据库文件路径（仅用于SQLite）
     :param source_host: 源数据库主机地址（非SQLite使用）
     :param source_port: 源数据库端口（非SQLite使用）
     :param source_user: 源数据库用户名（非SQLite使用）
     :param source_password: 源数据库密码（非SQLite使用）
     :param source_database: 源数据库名（非SQLite使用）
-    :param target_db_type: 目标数据库类型 ('sqlite', 'mysql', 'postgresql')，默认与源数据库相同
+    :param target_db_type: 目标数据库类型 ('sqlite', 'mysql', 'postgresql', 'oracle', 'mssql')，默认与源数据库相同
     :param target_db_path: 目标SQLite数据库文件路径（仅用于SQLite）
     :param target_host: 目标数据库主机地址（非SQLite使用）
     :param target_port: 目标数据库端口（非SQLite使用）
     :param target_user: 目标数据库用户名（非SQLite使用）
     :param target_password: 目标数据库密码（非SQLite使用）
     :param target_database: 目标数据库名（非SQLite使用）
+    :param source_service_name: Oracle源数据库服务名（仅用于Oracle）
+    :param target_service_name: Oracle目标数据库服务名（仅用于Oracle）
     :param table1: 第一个表名
     :param table2: 第二个表名
     :param fields: 指定要对比的字段列表

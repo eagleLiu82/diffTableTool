@@ -5,7 +5,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 版本遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
-## [Unreleased]
+## [1.1.0] - 2025-07-28
 
 ### 添加
 - GitHub Actions CI/CD 工作流
@@ -14,6 +14,10 @@
 - CSV格式详细差异报告功能
 - 简化命令行工具使用方式 (`table_diff` 命令)
 - 字段不一致时显示差异字段详情功能
+- 添加对Oracle数据库的支持（使用oracledb驱动）
+- 添加对Microsoft SQL Server数据库的支持（使用pymssql驱动）
+- 添加Oracle数据库服务名连接方式支持
+- 添加Oracle和MSSQL配置文件示例
 
 ### 修复
 - PostgreSQL 字段获取问题
@@ -25,6 +29,8 @@
 - 改进了对比逻辑以收集所有行差异用于CSV报告生成
 - 改进了所有数据库类型的查询排序逻辑，确保结果一致性
 - 字段参数(`--fields`)和排除参数(`--exclude`)改为逗号分隔
+- 扩展数据库适配器架构以支持更多数据库类型
+- 更新命令行参数以支持新数据库类型
 
 ## [1.0.0] - 2023-XX-XX
 

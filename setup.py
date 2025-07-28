@@ -8,7 +8,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="table-diff-tool",
-    version="1.0.0",
+    version="1.1.0",
     author="Database Table Diff Tool Contributors",
     author_email="example@example.com",
     description="一个用于对比数据库中两个表数据差异的工具",
@@ -31,10 +31,15 @@ setup(
     ],
     python_requires=">=3.6",
     install_requires=requirements,
+    extras_require={
+        "mysql": ["mysql-connector-python>=8.0.0"],
+        "postgresql": ["psycopg2-binary>=2.8.0"],
+        "oracle": ["oracledb>=1.0.0"],
+        "mssql": ["pymssql>=2.2.0"],
+    },
     entry_points={
         "console_scripts": [
             "table_diff=table_diff:main",
-            "table_diff_gui=table_diff.gui:main",
         ],
     },
 )

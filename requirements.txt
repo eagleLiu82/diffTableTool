@@ -1,6 +1,8 @@
 # 数据库驱动
 mysql-connector-python>=8.0.0
 psycopg2-binary>=2.8.0
+oracledb>=1.0.0
+pymssql>=2.2.0
 
 # 开发依赖
 pytest>=6.0.0

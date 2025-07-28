@@ -1,17 +1,17 @@
 # 数据库表对比工具
 
-一个用于对比数据库中两个表数据差异的工具，支持 SQLite、MySQL 和 PostgreSQL。
+一个用于对比数据库中两个表数据差异的工具，支持 SQLite、MySQL、PostgreSQL、Oracle 和 MSSQL。
 
 ## 功能特点
 
-- 支持多种数据库：SQLite、MySQL、PostgreSQL
+- 支持多种数据库：SQLite、MySQL、PostgreSQL、Oracle、MSSQL
 - 可以指定要对比的字段或排除特定字段
 - 支持添加 WHERE 条件进行过滤
 - 智能处理表结构差异
 - 详细的差异报告
 - 自动处理查询顺序问题，确保结果一致性
 - 生成CSV格式的详细差异报告
-- 支持跨不同数据库类型比较（如SQLite与MySQL、MySQL与PostgreSQL等）
+- 支持跨不同数据库类型比较（如SQLite与MySQL、MySQL与PostgreSQL、Oracle与MSSQL等）
 - 向后兼容：默认情况下源和目标数据库相同
 - 当源表和目标表字段不一致时，显示差异并停止比较
 - 支持图形用户界面（GUI）和命令行界面（CLI）
@@ -31,6 +31,12 @@ pip install mysql-connector-python
 
 # 对于PostgreSQL支持
 pip install psycopg2
+
+# 对于Oracle支持
+pip install oracledb
+
+# 对于MSSQL支持
+pip install pymssql
 ```
 
 ## 使用方法
@@ -71,6 +77,12 @@ table_diff --source-db-type mysql --source-host localhost --source-port 3306 --s
 
 # 对比PostgreSQL数据库中的两个表
 table_diff --source-db-type postgresql --source-host localhost --source-port 5432 --source-user postgres --source-password your_password --source-database your_database --table1 users_old --table2 users_new
+
+# 对比Oracle数据库中的两个表
+table_diff --source-db-type oracle --source-host localhost --source-port 1521 --source-user system --source-password your_password --source-database ORCL --table1 users_old --table2 users_new
+
+# 对比MSSQL数据库中的两个表
+table_diff --source-db-type mssql --source-host localhost --source-port 1433 --source-user sa --source-password your_password --source-database your_database --table1 users_old --table2 users_new
 ```
 
 或者使用Python脚本方式：
@@ -84,8 +96,13 @@ python table_diff.py --source-db-type mysql --source-host localhost --source-por
 
 # 对比PostgreSQL数据库中的两个表
 python table_diff.py --source-db-type postgresql --source-host localhost --source-port 5432 --source-user postgres --source-password your_password --source-database your_database --table1 users_old --table2 users_new
-```
 
+# 对比Oracle数据库中的两个表
+python table_diff.py --source-db-type oracle --source-host localhost --source-port 1521 --source-user system --source-password your_password --source-database ORCL --table1 users_old --table2 users_new
+
+# 对比MSSQL数据库中的两个表
+python table_diff.py --source-db-type mssql --source-host localhost --source-port 1433 --source-user sa --source-password your_password --source-database your_database --table1 users_old --table2 users_new
+```
 
 ### 跨数据库比较
 
@@ -115,6 +132,15 @@ table_diff --source-db-type mysql --source-host mysql_host --source-port 3306 \
            --target-user pg_user --target-password pg_password \
            --target-database pg_database \
            --table1 products --table2 products
+
+# 对比Oracle和MSSQL数据库中的表
+table_diff --source-db-type oracle --source-host oracle_host --source-port 1521 \
+           --source-user oracle_user --source-password oracle_password \
+           --source-database oracle_database \
+           --target-db-type mssql --target-host mssql_host --target-port 1433 \
+           --target-user mssql_user --target-password mssql_password \
+           --target-database mssql_database \
+           --table1 employees --table2 employees
 ```
 
 ### 指定字段对比
@@ -253,25 +279,27 @@ python tests/test_table_diff.py
 
 | 参数 | 说明 | 是否必填 |
 |------|------|---------|
-| --source-db-type | 源数据库类型 (sqlite, mysql, postgresql) | 否，默认为sqlite |
+| --source-db-type | 源数据库类型 (sqlite, mysql, postgresql, oracle, mssql) | 否，默认为sqlite |
 | --source-db-path | SQLite源数据库文件路径 | SQLite必填 |
-| --source-host | 源数据库主机地址 | MySQL/PostgreSQL必填 |
-| --source-port | 源数据库端口 | 否 (MySQL默认3306, PostgreSQL默认5432) |
-| --source-user | 源数据库用户名 | MySQL/PostgreSQL必填 |
-| --source-password | 源数据库密码 | MySQL/PostgreSQL必填 |
-| --source-database | 源数据库名 | MySQL/PostgreSQL必填 |
+| --source-host | 源数据库主机地址 | MySQL/PostgreSQL/Oracle/MSSQL必填 |
+| --source-port | 源数据库端口 | 否 (MySQL默认3306, PostgreSQL默认5432, Oracle默认1521, MSSQL默认1433) |
+| --source-user | 源数据库用户名 | MySQL/PostgreSQL/Oracle/MSSQL必填 |
+| --source-password | 源数据库密码 | MySQL/PostgreSQL/Oracle/MSSQL必填 |
+| --source-database | 源数据库名 | MySQL/PostgreSQL/Oracle/MSSQL必填 |
+| --source-service-name | Oracle源数据库服务名 | Oracle可选 |
 
 ##### 目标数据库参数
 
 | 参数 | 说明 | 是否必填 |
 |------|------|---------|
-| --target-db-type | 目标数据库类型 (sqlite, mysql, postgresql) | 否，默认与源数据库相同 |
+| --target-db-type | 目标数据库类型 (sqlite, mysql, postgresql, oracle, mssql) | 否，默认与源数据库相同 |
 | --target-db-path | SQLite目标数据库文件路径 | 根据需要填写 |
 | --target-host | 目标数据库主机地址 | 根据需要填写 |
 | --target-port | 目标数据库端口 | 否 |
 | --target-user | 目标数据库用户名 | 根据需要填写 |
 | --target-password | 目标数据库密码 | 根据需要填写 |
 | --target-database | 目标数据库名 | 根据需要填写 |
+| --target-service-name | Oracle目标数据库服务名 | Oracle可选 |
 
 > 注意：如果未指定目标数据库相关参数，则默认使用源数据库的相关配置。
 
@@ -337,6 +365,31 @@ table_diff --source-db-type mysql --source-host localhost --source-port 3306 --s
 
 ```
 table_diff --source-db-type postgresql --source-host localhost --source-port 5432 --source-user postgres --source-password password123 --source-database myapp --table1 users_old --table2 users_new --csv-report differences.csv
+```
+
+### Oracle示例
+
+```
+# 使用SID连接Oracle数据库
+table_diff --source-db-type oracle --source-host localhost --source-port 1521 --source-user system --source-password password --source-database ORCL --table1 employees_2022 --table2 employees_2023
+
+# 使用Service Name连接Oracle数据库
+table_diff --source-db-type oracle --source-host localhost --source-port 1521 --source-user system --source-password password --source-service-name ORCLSERVICE --table1 employees_2022 --table2 employees_2023
+
+# 跨数据库比较：Oracle与PostgreSQL
+table_diff --source-db-type oracle --source-host oracle-host --source-port 1521 --source-user system --source-password oracle-password --source-database ORCL --table1 products \
+           --target-db-type postgresql --target-host pg-host --target-port 5432 --target-user postgres --target-password pg-password --target-database myapp --table2 products
+```
+
+### MSSQL示例
+
+```
+# 连接MSSQL数据库
+table_diff --source-db-type mssql --source-host localhost --source-port 1433 --source-user sa --source-password StrongPassword123 --source-database TestDB --table1 employees_2022 --table2 employees_2023
+
+# 跨数据库比较：MSSQL与MySQL
+table_diff --source-db-type mssql --source-host mssql-host --source-port 1433 --source-user sa --source-password mssql-password --source-database TestDB --table1 users \
+           --target-db-type mysql --target-host mysql-host --target-port 3306 --target-user root --target-password mysql-password --target-database myapp --table2 users
 ```
 
 ## 输出说明
@@ -414,7 +467,55 @@ result = run_comparison(
 - `SQLiteAdapter`: SQLite数据库适配器
 - `MySQLAdapter`: MySQL数据库适配器
 - `PostgreSQLAdapter`: PostgreSQL数据库适配器
+- `OracleAdapter`: Oracle数据库适配器
+- `MSSQLAdapter`: MSSQL数据库适配器
 
 ## 扩展
 
 该工具通过适配器模式设计，可以轻松扩展以支持更多类型的数据库。只需继承[DatabaseAdapter](file:///C:/Users/25404/diffTableTool/table_diff.py#L13-L21)抽象类并实现相应的方法即可.
+
+## 支持的数据库
+
+- SQLite
+- MySQL
+- PostgreSQL
+- Oracle (需要安装 `oracledb` 包)
+- MSSQL (需要安装 `pymssql` 包)
+
+### 安装额外依赖
+
+根据不同数据库类型，您可能需要安装额外的依赖包：
+
+```bash
+# MySQL支持
+pip install mysql-connector-python
+
+# PostgreSQL支持
+pip install psycopg2
+
+# Oracle支持
+pip install oracledb
+
+# MSSQL支持
+pip install pymssql
+```
+
+或者，您可以使用pip的extras功能安装特定数据库的支持：
+
+```bash
+# 安装MySQL支持
+pip install table-diff-tool[mysql]
+
+# 安装PostgreSQL支持
+pip install table-diff-tool[postgresql]
+
+# 安装Oracle支持
+pip install table-diff-tool[oracle]
+
+# 安装MSSQL支持
+pip install table-diff-tool[mssql]
+
+# 安装所有数据库支持
+pip install table-diff-tool[mysql,postgresql,oracle,mssql]
+```
+
