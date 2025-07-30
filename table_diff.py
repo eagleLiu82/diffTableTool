@@ -583,26 +583,38 @@ class TableComparator:
         # 如果用户指定了字段，则直接使用
         if self.fields:
             logger.info(f"使用指定的字段: {self.fields}")
-            return self.fields
+            comparison_fields = list(self.fields)
+        else:
+            # 否则获取两个表的公共字段
+            logger.info(f"获取表 {self.table1} 的字段")
+            fields1 = self.get_table_fields(self.table1, 1)
+            logger.info(f"获取表 {self.table2} 的字段")
+            fields2 = self.get_table_fields(self.table2, 2)
 
-        # 否则获取两个表的公共字段
-        logger.info(f"获取表 {self.table1} 的字段")
-        fields1 = self.get_table_fields(self.table1, 1)
-        logger.info(f"获取表 {self.table2} 的字段")
-        fields2 = self.get_table_fields(self.table2, 2)
+            # 获取公共字段
+            common_fields = list(set(fields1) & set(fields2))
+            logger.info(f"两个表的公共字段: {common_fields}")
 
-        # 获取公共字段
-        common_fields = list(set(fields1) & set(fields2))
-        logger.info(f"两个表的公共字段: {common_fields}")
+            # 如果有排除字段，则移除它们
+            if self.exclude_fields:
+                logger.info(f"排除字段: {self.exclude_fields}")
+                common_fields = [f for f in common_fields if f not in self.exclude_fields]
+                logger.info(f"排除后剩余字段: {common_fields}")
 
-        # 如果有排除字段，则移除它们
-        if self.exclude_fields:
-            logger.info(f"排除字段: {self.exclude_fields}")
-            common_fields = [f for f in common_fields if f not in self.exclude_fields]
-            logger.info(f"排除后剩余字段: {common_fields}")
+            comparison_fields = common_fields
 
-        logger.info(f"最终对比字段: {common_fields}")
-        return common_fields
+        logger.info(f"最终对比字段: {comparison_fields}")
+        
+        # 如果表有主键但主键不在比较字段中，则添加主键字段
+        # 获取源表的主键
+        primary_keys = self.db1.get_primary_keys(self.table1)
+        if primary_keys:
+            for pk in primary_keys:
+                if pk not in comparison_fields:
+                    logger.info(f"添加主键字段 {pk} 到比较字段中")
+                    comparison_fields.append(pk)
+        
+        return comparison_fields
 
     def build_query(self, fields: List[str], table_name: str, db_index: int = 1) -> str:
         """
@@ -614,7 +626,17 @@ class TableComparator:
         :return: 查询SQL语句
         """
         logger.info(f"为表 {table_name} 构建查询，字段: {fields}")
-        field_list = ', '.join(fields)
+        
+        # 获取主键字段
+        primary_keys = self.db1.get_primary_keys(table_name) if db_index == 1 else self.db2.get_primary_keys(table_name)
+        
+        # 确保主键字段包含在查询字段中，以避免KeyError
+        query_fields = list(fields)
+        for pk in primary_keys:
+            if pk not in query_fields:
+                query_fields.append(pk)
+        
+        field_list = ', '.join(query_fields)
         query = f"SELECT {field_list} FROM {table_name}"
         
         # 添加WHERE条件
@@ -622,8 +644,7 @@ class TableComparator:
             query += f" WHERE {self.where_condition}"
             logger.info(f"添加WHERE条件: {self.where_condition}")
         
-        # 尝试获取主键进行排序
-        primary_keys = self.db1.get_primary_keys(table_name) if db_index == 1 else self.db2.get_primary_keys(table_name)
+        # 添加ORDER BY主键
         if primary_keys:
             order_by_fields = ', '.join(primary_keys)
             query += f" ORDER BY {order_by_fields}"
@@ -633,7 +654,7 @@ class TableComparator:
             # 为PostgreSQL添加ORDER BY以确保结果顺序一致
             db = self.db1 if db_index == 1 else self.db2
             if isinstance(db, PostgreSQLAdapter):
-                order_by_fields = ', '.join(fields)
+                order_by_fields = ', '.join(query_fields)
                 query += f" ORDER BY {order_by_fields}"
                 logger.info(f"添加ORDER BY所有字段: {order_by_fields}")
             # 为其他数据库也添加排序以确保一致性
@@ -1029,14 +1050,16 @@ def main():
         # 尝试启动GUI版本
         try:
             # 添加当前目录到Python路径
-            sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            if current_dir not in sys.path:
+                sys.path.insert(0, current_dir)
             
             # 导入并运行GUI版本
             from table_diff_gui import main as gui_main
             gui_main()
             return
-        except ImportError:
-            print("错误: 无法找到GUI模块，请确保 table_diff_gui.py 文件存在")
+        except ImportError as e:
+            print(f"错误: 无法找到GUI模块，请确保 table_diff_gui.py 文件存在: {e}")
             sys.exit(1)
     
     parser = argparse.ArgumentParser(description='数据库表对比工具')
