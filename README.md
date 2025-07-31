@@ -23,8 +23,6 @@
 首先克隆或下载此项目，然后安装依赖：
 
 ```bash
-# 安装基础依赖
-pip install -e .
 
 # 对于MySQL支持
 pip install mysql-connector-python

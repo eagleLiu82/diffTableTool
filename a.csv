@@ -1,0 +1,12 @@
+row_number,column_name,table1_value,table2_value
+1,salary,15000.00,16000.00
+2,salary,12000.00,13000.00
+3,department,人事部,人事二部
+3,salary,11000.00,10000.00
+4,id,,4
+4,department,,市场部
+4,name,,赵六
+4,hire_date,,2023-05-01
+4,email,,zhaoliu@company.com
+4,is_active,,True
+4,salary,,11000.00

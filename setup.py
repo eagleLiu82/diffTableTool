@@ -10,11 +10,11 @@ setup(
     name="table-diff-tool",
     version="1.1.0",
     author="Database Table Diff Tool Contributors",
-    author_email="example@example.com",
+    author_email="25404210@qq.com",
     description="一个用于对比数据库中两个表数据差异的工具",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/your-username/table-diff-tool",
+    url="https://github.com/eagleLiu82/diffTableTool",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",

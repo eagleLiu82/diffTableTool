@@ -1,0 +1,16 @@
+row_number,column_name,table1_value,table2_value
+1,salary,15000.00,16000.00
+2,id,2,
+2,department,销售部,
+2,name,李四,
+2,hire_date,2020-07-01,
+2,email,lisi@company.com,
+2,is_active,1,
+2,salary,12000.00,
+4,id,,4
+4,department,,市场部
+4,name,,赵六
+4,hire_date,,2023-05-01
+4,email,,zhaoliu@company.com
+4,is_active,,1
+4,salary,,11000.00

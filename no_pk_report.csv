@@ -1,0 +1,5 @@
+row_type,key_info,row_number,column_name,table1_value,table2_value
+different_data,,2,age,30,31
+only_in_table1,,3,age,35,
+only_in_table1,,3,email,charlie@example.com,
+only_in_table1,,3,name,Charlie,
