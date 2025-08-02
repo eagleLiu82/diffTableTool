@@ -118,7 +118,7 @@ def main():
         print("提交失败")
         return 1
     
-    print("提交成功")
+    print(f"提交成功: {commit_message}")
     
     # 如果指定了--no-push，则不推送
     if args.no_push:
@@ -131,28 +131,36 @@ def main():
         return 1
     
     # 推送到远程仓库
+    push_count = 0
+    
     if not args.gitee_only:
         print("\n正在推送到GitHub...")
-        push_github = git_push(current_dir, "origin")
+        push_github = git_push(current_dir, "origin", "main")
         if push_github is None:
             print("推送到GitHub失败")
         else:
             print("已成功推送到GitHub")
+            push_count += 1
     
     if not args.github_only:
         # 检查是否存在gitee远程仓库
         remotes = run_command("git remote", current_dir)
         if remotes and "gitee" in remotes:
             print("\n正在推送到Gitee...")
-            push_gitee = git_push(current_dir, "gitee")
+            push_gitee = git_push(current_dir, "gitee", "main")
             if push_gitee is None:
                 print("推送到Gitee失败")
             else:
                 print("已成功推送到Gitee")
+                push_count += 1
         else:
             print("\n未检测到Gitee远程仓库，跳过推送")
     
-    print("\n所有操作完成!")
+    if push_count > 0:
+        print(f"\n成功推送到 {push_count} 个远程仓库!")
+    else:
+        print("\n没有成功推送到任何远程仓库!")
+    
     return 0
 
 if __name__ == "__main__":

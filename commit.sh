@@ -70,16 +70,19 @@ echo "$STAGED_FILES"
 # 提交更改
 echo "正在提交更改..."
 git commit -m "$COMMIT_MSG"
-echo "提交成功"
+echo "提交成功: $COMMIT_MSG"
 
 # 推送到远程仓库
 echo "检测到以下远程仓库:"
 git remote -v
 
+PUSH_COUNT=0
+
 # 推送到GitHub
 echo "正在推送到GitHub..."
-if git push origin; then
+if git push origin main; then
   echo "已成功推送到GitHub"
+  ((PUSH_COUNT++))
 else
   echo "推送到GitHub失败"
 fi
@@ -87,13 +90,20 @@ fi
 # 推送到Gitee（如果存在）
 if git remote | grep -q "gitee"; then
   echo "正在推送到Gitee..."
-  if git push gitee; then
+  if git push gitee main; then
     echo "已成功推送到Gitee"
+    ((PUSH_COUNT++))
   else
     echo "推送到Gitee失败"
   fi
 else
   echo "未检测到Gitee远程仓库，跳过推送"
+fi
+
+if [[ $PUSH_COUNT -gt 0 ]]; then
+  echo "成功推送到 $PUSH_COUNT 个远程仓库!"
+else
+  echo "没有成功推送到任何远程仓库!"
 fi
 
 echo "所有操作完成!"
