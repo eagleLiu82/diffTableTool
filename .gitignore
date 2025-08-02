@@ -49,6 +49,25 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
+# 自定义忽略文件
+commit.sh
+commit_changes.py
+*.json
+!*.md.json
+
+# 忽略特定的CSV和数据库文件
+*.csv
+*.db
+!sample.db
+
+# 忽默diff报告文件
+differences.csv
+full_report.csv
+diff_table_test.csv
+no_pk_report.csv
+a.csv
+b.csv
+
 # Translations
 *.mo
 *.pot
