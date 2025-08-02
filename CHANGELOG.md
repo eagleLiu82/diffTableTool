@@ -5,6 +5,11 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 版本遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [1.1.1] - 2025-08-02
+
+### 修复
+- 修复GUI中表特定WHERE条件未生效的问题
+
 ## [1.1.0] - 2025-07-28
 
 ### 添加
@@ -35,7 +40,7 @@
 ## [1.0.0] - 2023-XX-XX
 
 ### 添加
-- 支持 SQLite、MySQL 和 PostgreSQL 数据库
+- 支持 SQLite、MySQL、PostgreSQL 数据库
 - 表字段对比功能
 - 行数据对比功能
 - 支持指定字段或排除字段

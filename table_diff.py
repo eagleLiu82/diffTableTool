@@ -204,54 +204,38 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 ORDER BY a.attnum
             """, (table_name,))
             
-            fields_result = cursor.fetchall()
-            if fields_result:
-                fields = [row[0] for row in fields_result]
+            fields = [row[0] for row in cursor.fetchall()]
+            if fields:
                 logger.info(f"通过pg_attribute获取到表 {table_name} 的字段: {fields}")
                 return fields
         except Exception as e:
             logger.warning(f"通过pg_attribute获取字段失败: {e}")
             
-        # 如果还是失败，尝试不指定数据库名的方式
-        try:
-            cursor.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = %s
-                ORDER BY ordinal_position
-            """, (table_name,))
-            
-            fields_result = cursor.fetchall()
-            fields = [row[0] for row in fields_result]
-            logger.info(f"通过information_schema(不指定数据库)获取到表 {table_name} 的字段: {fields}")
-            return fields
-        except Exception as e:
-            logger.error(f"所有尝试获取字段的方法都失败了: {e}")
-            
-        logger.warning(f"未能获取到表 {table_name} 的任何字段")
-        return []
+        # 如果都失败了，抛出表不存在的异常
+        raise ValueError(f"表 '{table_name}' 不存在")
     
     def get_primary_keys(self, table_name: str) -> List[str]:
         """获取PostgreSQL表的主键字段"""
         logger.info(f"获取PostgreSQL表 {table_name} 的主键")
-        cursor = self.connection.cursor()
-        
         try:
+            cursor = self.connection.cursor()
             cursor.execute("""
                 SELECT a.attname
                 FROM pg_index i
                 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
                 WHERE i.indrelid = %s::regclass AND i.indisprimary
-                ORDER BY a.attnum
             """, (table_name,))
             
-            primary_keys_result = cursor.fetchall()
-            primary_keys = [row[0] for row in primary_keys_result]
+            primary_keys = [row[0] for row in cursor.fetchall()]
             logger.info(f"表 {table_name} 的主键: {primary_keys}")
             return primary_keys
         except Exception as e:
-            logger.warning(f"获取主键失败，使用空列表: {e}")
-            return []
+            # 检查是否是表不存在的错误
+            error_msg = str(e).lower()
+            if "does not exist" in error_msg or "not found" in error_msg or "unknown" in error_msg:
+                raise ValueError(f"表 '{table_name}' 不存在")
+            else:
+                raise RuntimeError(f"获取表 '{table_name}' 主键信息时出错: {str(e)}")
     
     def execute_query(self, query: str):
         logger.info(f"执行PostgreSQL查询: {query}")
@@ -301,66 +285,89 @@ class OracleAdapter(DatabaseAdapter):
     
     def get_table_fields(self, table_name: str) -> List[str]:
         logger.info(f"获取Oracle表 {table_name} 的字段")
-        cursor = self.connection.cursor()
-        
-        # 分离模式和表名（如果提供了模式）
-        if '.' in table_name:
-            schema, table = table_name.split('.', 1)
-        else:
-            schema = None
-            table = table_name
-            
-        # 构建查询
-        query = """
-            SELECT column_name 
-            FROM all_tab_columns 
-            WHERE table_name = UPPER(:table_name)
-        """
-        params = {'table_name': table}
-        
-        if schema:
-            query += " AND owner = UPPER(:owner)"
-            params['owner'] = schema
-            
-        query += " ORDER BY column_id"
-        
-        cursor.execute(query, params)
-        fields = [row[0].lower() for row in cursor.fetchall()]
-        logger.info(f"表 {table_name} 的字段: {fields}")
-        return fields
+        try:
+            cursor = self.connection.cursor()
+            # 处理可能包含模式的表名
+            if '.' in table_name:
+                parts = table_name.split('.')
+                if len(parts) == 2:
+                    owner, table = parts
+                else:
+                    owner, table = None, table_name
+            else:
+                owner, table = None, table_name
+                
+            if owner:
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM all_tab_columns 
+                    WHERE table_name = UPPER(%s) AND owner = UPPER(%s)
+                    ORDER BY column_id
+                """, (table, owner))
+            else:
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM user_tab_columns 
+                    WHERE table_name = UPPER(%s)
+                    ORDER BY column_id
+                """, (table,))
+                
+            fields = [row[0] for row in cursor.fetchall()]
+            logger.info(f"表 {table_name} 的字段: {fields}")
+            return fields
+        except Exception as e:
+            # 检查是否是表不存在的错误
+            error_msg = str(e).lower()
+            if "not exist" in error_msg or "not found" in error_msg or "invalid" in error_msg:
+                raise ValueError(f"表 '{table_name}' 不存在")
+            else:
+                raise RuntimeError(f"获取表 '{table_name}' 字段信息时出错: {str(e)}")
     
     def get_primary_keys(self, table_name: str) -> List[str]:
         """获取Oracle表的主键字段"""
         logger.info(f"获取Oracle表 {table_name} 的主键")
-        cursor = self.connection.cursor()
-        
-        # 分离模式和表名（如果提供了模式）
-        if '.' in table_name:
-            schema, table = table_name.split('.', 1)
-        else:
-            schema = None
-            table = table_name
-            
-        # 构建查询
-        query = """
-            SELECT cols.column_name
-            FROM all_constraints cons
-            JOIN all_cons_columns cols ON cons.constraint_name = cols.constraint_name
-            WHERE cons.constraint_type = 'P' 
-            AND cols.table_name = UPPER(:table_name)
-        """
-        params = {'table_name': table}
-        
-        if schema:
-            query += " AND cons.owner = UPPER(:owner) AND cols.owner = UPPER(:owner)"
-            params['owner'] = schema
-            
-        query += " ORDER BY cols.position"
-        
-        cursor.execute(query, params)
-        primary_keys = [row[0].lower() for row in cursor.fetchall()]
-        logger.info(f"表 {table_name} 的主键: {primary_keys}")
-        return primary_keys
+        try:
+            cursor = self.connection.cursor()
+            # 处理可能包含模式的表名
+            if '.' in table_name:
+                parts = table_name.split('.')
+                if len(parts) == 2:
+                    owner, table = parts
+                else:
+                    owner, table = None, table_name
+            else:
+                owner, table = None, table_name
+                
+            if owner:
+                cursor.execute("""
+                    SELECT cols.column_name
+                    FROM all_constraints cons
+                    JOIN all_cons_columns cols ON cons.constraint_name = cols.constraint_name AND cons.owner = cols.owner
+                    WHERE cols.table_name = UPPER(%s) AND cols.owner = UPPER(%s) AND cons.constraint_type = 'P'
+                    ORDER BY cols.position
+                """, (table, owner))
+            else:
+                cursor.execute("""
+                    SELECT column_name
+                    FROM user_cons_columns
+                    WHERE table_name = UPPER(%s) AND constraint_name IN (
+                        SELECT constraint_name 
+                        FROM user_constraints 
+                        WHERE constraint_type = 'P'
+                    )
+                    ORDER BY position
+                """, (table,))
+                
+            primary_keys = [row[0] for row in cursor.fetchall()]
+            logger.info(f"表 {table_name} 的主键: {primary_keys}")
+            return primary_keys
+        except Exception as e:
+            # 检查是否是表不存在的错误
+            error_msg = str(e).lower()
+            if "not exist" in error_msg or "not found" in error_msg or "invalid" in error_msg:
+                raise ValueError(f"表 '{table_name}' 不存在")
+            else:
+                raise RuntimeError(f"获取表 '{table_name}' 主键信息时出错: {str(e)}")
     
     def execute_query(self, query: str):
         logger.info(f"执行Oracle查询: {query}")
@@ -410,55 +417,71 @@ class MSSQLAdapter(DatabaseAdapter):
     
     def get_table_fields(self, table_name: str) -> List[str]:
         logger.info(f"获取MSSQL表 {table_name} 的字段")
-        cursor = self.connection.cursor()
-        
-        # 处理可能包含模式的表名
-        if '.' in table_name:
-            parts = table_name.split('.')
-            if len(parts) == 2:
-                schema, table = parts
+        try:
+            cursor = self.connection.cursor()
+            
+            # 处理可能包含模式的表名
+            if '.' in table_name:
+                parts = table_name.split('.')
+                if len(parts) == 2:
+                    schema, table = parts
+                else:
+                    schema, table = 'dbo', table_name
             else:
                 schema, table = 'dbo', table_name
-        else:
-            schema, table = 'dbo', table_name
+                
+            cursor.execute("""
+                SELECT COLUMN_NAME
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = %s AND TABLE_SCHEMA = %s
+                ORDER BY ORDINAL_POSITION
+            """, (table, schema))
             
-        cursor.execute("""
-            SELECT COLUMN_NAME
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_NAME = %s AND TABLE_SCHEMA = %s
-            ORDER BY ORDINAL_POSITION
-        """, (table, schema))
-        
-        fields = [row[0] for row in cursor.fetchall()]
-        logger.info(f"表 {table_name} 的字段: {fields}")
-        return fields
+            fields = [row[0] for row in cursor.fetchall()]
+            logger.info(f"表 {table_name} 的字段: {fields}")
+            return fields
+        except Exception as e:
+            # 检查是否是表不存在的错误
+            error_msg = str(e).lower()
+            if "not exist" in error_msg or "not found" in error_msg or "invalid" in error_msg:
+                raise ValueError(f"表 '{table_name}' 不存在")
+            else:
+                raise RuntimeError(f"获取表 '{table_name}' 字段信息时出错: {str(e)}")
     
     def get_primary_keys(self, table_name: str) -> List[str]:
         """获取MSSQL表的主键字段"""
         logger.info(f"获取MSSQL表 {table_name} 的主键")
-        cursor = self.connection.cursor()
-        
-        # 处理可能包含模式的表名
-        if '.' in table_name:
-            parts = table_name.split('.')
-            if len(parts) == 2:
-                schema, table = parts
+        try:
+            cursor = self.connection.cursor()
+            
+            # 处理可能包含模式的表名
+            if '.' in table_name:
+                parts = table_name.split('.')
+                if len(parts) == 2:
+                    schema, table = parts
+                else:
+                    schema, table = 'dbo', table_name
             else:
                 schema, table = 'dbo', table_name
-        else:
-            schema, table = 'dbo', table_name
+                
+            cursor.execute("""
+                SELECT COLUMN_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+                WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1
+                AND TABLE_NAME = %s AND TABLE_SCHEMA = %s
+                ORDER BY ORDINAL_POSITION
+            """, (table, schema))
             
-        cursor.execute("""
-            SELECT COLUMN_NAME
-            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
-            WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1
-            AND TABLE_NAME = %s AND TABLE_SCHEMA = %s
-            ORDER BY ORDINAL_POSITION
-        """, (table, schema))
-        
-        primary_keys = [row[0] for row in cursor.fetchall()]
-        logger.info(f"表 {table_name} 的主键: {primary_keys}")
-        return primary_keys
+            primary_keys = [row[0] for row in cursor.fetchall()]
+            logger.info(f"表 {table_name} 的主键: {primary_keys}")
+            return primary_keys
+        except Exception as e:
+            # 检查是否是表不存在的错误
+            error_msg = str(e).lower()
+            if "not exist" in error_msg or "not found" in error_msg or "invalid" in error_msg:
+                raise ValueError(f"表 '{table_name}' 不存在")
+            else:
+                raise RuntimeError(f"获取表 '{table_name}' 主键信息时出错: {str(e)}")
     
     def execute_query(self, query: str):
         logger.info(f"执行MSSQL查询: {query}")
@@ -518,6 +541,10 @@ class TableComparator:
         self.fields = []
         self.exclude_fields = []
         self.where_condition = None
+        # 支持两个表的不同WHERE条件
+        self.where_condition1 = None
+        self.where_condition2 = None
+        logger.info("TableComparator初始化完成")
 
     def set_tables(self, table1: str, table2: str):
         """
@@ -550,12 +577,30 @@ class TableComparator:
 
     def set_where_condition(self, where_condition: str):
         """
-        设置WHERE条件
+        设置WHERE条件（两个表使用相同的WHERE条件）
         
         :param where_condition: WHERE条件字符串
         """
         logger.info(f"设置WHERE条件: {where_condition}")
         self.where_condition = where_condition
+
+    def set_where_condition1(self, where_condition: str):
+        """
+        设置第一个表的WHERE条件
+        
+        :param where_condition: WHERE条件字符串
+        """
+        logger.info(f"设置表 {self.table1} 的WHERE条件: {where_condition}")
+        self.where_condition1 = where_condition
+
+    def set_where_condition2(self, where_condition: str):
+        """
+        设置第二个表的WHERE条件
+        
+        :param where_condition: WHERE条件字符串
+        """
+        logger.info(f"设置表 {self.table2} 的WHERE条件: {where_condition}")
+        self.where_condition2 = where_condition
 
     def get_table_fields(self, table_name: str, db_index: int = 1) -> List[str]:
         """
@@ -566,12 +611,20 @@ class TableComparator:
         :return: 字段名列表
         """
         logger.info(f"获取表 {table_name} 的所有字段")
-        if db_index == 1:
-            fields = self.db1.get_table_fields(table_name)
-        else:
-            fields = self.db2.get_table_fields(table_name)
-        logger.info(f"表 {table_name} 的字段: {fields}")
-        return fields
+        try:
+            if db_index == 1:
+                fields = self.db1.get_table_fields(table_name)
+            else:
+                fields = self.db2.get_table_fields(table_name)
+            logger.info(f"表 {table_name} 的字段: {fields}")
+            return fields
+        except Exception as e:
+            # 检查是否是表不存在的错误
+            error_msg = str(e).lower()
+            if "no such table" in error_msg or "doesn't exist" in error_msg or "not found" in error_msg or "unknown" in error_msg or "表" in error_msg:
+                raise ValueError(f"表 '{table_name}' 不存在")
+            else:
+                raise RuntimeError(f"获取表 '{table_name}' 字段信息时出错: {str(e)}")
 
     def get_comparison_fields(self) -> List[str]:
         """
@@ -583,6 +636,24 @@ class TableComparator:
         # 如果用户指定了字段，则直接使用
         if self.fields:
             logger.info(f"使用指定的字段: {self.fields}")
+            # 检查指定的字段是否在两个表中都存在
+            try:
+                fields1 = self.get_table_fields(self.table1, 1)
+                fields2 = self.get_table_fields(self.table2, 2)
+            except Exception as e:
+                logger.error(f"获取表字段时出错: {str(e)}")
+                raise
+            
+            # 检查每个指定的字段是否存在于两个表中
+            missing_in_table1 = [f for f in self.fields if f not in fields1]
+            missing_in_table2 = [f for f in self.fields if f not in fields2]
+            
+            if missing_in_table1:
+                raise ValueError(f"字段 {', '.join(missing_in_table1)} 在表 '{self.table1}' 中不存在")
+                
+            if missing_in_table2:
+                raise ValueError(f"字段 {', '.join(missing_in_table2)} 在表 '{self.table2}' 中不存在")
+                
             comparison_fields = list(self.fields)
         else:
             # 否则获取两个表的公共字段
@@ -598,7 +669,14 @@ class TableComparator:
             # 如果有排除字段，则移除它们
             if self.exclude_fields:
                 logger.info(f"排除字段: {self.exclude_fields}")
-                common_fields = [f for f in common_fields if f not in self.exclude_fields]
+                # 检查要排除的字段是否存在于公共字段中
+                existing_exclude_fields = [f for f in self.exclude_fields if f in common_fields]
+                non_existing_exclude_fields = [f for f in self.exclude_fields if f not in common_fields]
+                
+                if non_existing_exclude_fields:
+                    logger.warning(f"要排除的字段 {', '.join(non_existing_exclude_fields)} 不存在于两个表的公共字段中")
+                
+                common_fields = [f for f in common_fields if f not in existing_exclude_fields]
                 logger.info(f"排除后剩余字段: {common_fields}")
 
             comparison_fields = common_fields
@@ -606,13 +684,14 @@ class TableComparator:
         logger.info(f"最终对比字段: {comparison_fields}")
         
         # 如果表有主键但主键不在比较字段中，则添加主键字段
-        # 获取源表的主键
-        primary_keys = self.db1.get_primary_keys(self.table1)
-        if primary_keys:
-            for pk in primary_keys:
-                if pk not in comparison_fields:
-                    logger.info(f"添加主键字段 {pk} 到比较字段中")
-                    comparison_fields.append(pk)
+        # 仅当用户没有指定字段时才添加主键，如果用户指定了字段，则完全按照用户指定的字段进行比较
+        if not self.fields:
+            primary_keys = self.db1.get_primary_keys(self.table1)
+            if primary_keys:
+                for pk in primary_keys:
+                    if pk not in comparison_fields:
+                        logger.info(f"添加主键字段 {pk} 到比较字段中")
+                        comparison_fields.append(pk)
         
         return comparison_fields
 
@@ -639,10 +718,36 @@ class TableComparator:
         field_list = ', '.join(query_fields)
         query = f"SELECT {field_list} FROM {table_name}"
         
-        # 添加WHERE条件
-        if self.where_condition:
-            query += f" WHERE {self.where_condition}"
-            logger.info(f"添加WHERE条件: {self.where_condition}")
+        # 添加WHERE条件，优先使用特定表的WHERE条件
+        where_condition = None
+        logger.info(f"表名匹配详情 - 当前表名: '{table_name}', self.table1: '{self.table1}', self.table2: '{self.table2}'")
+        logger.info(f"WHERE条件值 - where_condition1: {self.where_condition1}, where_condition2: {self.where_condition2}, where_condition: {self.where_condition}")
+        
+        # 改进表名匹配逻辑，处理可能的模式名前缀
+        # 确保表名不为空
+        if self.table1 and self.table2:
+            table1_name = self.table1.split('.')[-1]  # 获取表名部分（去掉模式前缀）
+            table2_name = self.table2.split('.')[-1]  # 获取表名部分（去掉模式前缀）
+            current_table_name = table_name.split('.')[-1]  # 获取当前表名部分（去掉模式前缀）
+            
+            logger.info(f"简化表名匹配 - 当前表名: '{current_table_name}', 表1名: '{table1_name}', 表2名: '{table2_name}'")
+            
+            if current_table_name == table1_name:
+                where_condition = self.where_condition1 or self.where_condition
+                logger.info(f"匹配到表1，使用表1的WHERE条件: {where_condition}")
+            elif current_table_name == table2_name:
+                where_condition = self.where_condition2 or self.where_condition
+                logger.info(f"匹配到表2，使用表2的WHERE条件: {where_condition}")
+            else:
+                where_condition = self.where_condition
+                logger.info(f"未匹配到特定表，使用通用WHERE条件: {where_condition}")
+        else:
+            where_condition = self.where_condition
+            logger.info(f"表名未设置，使用通用WHERE条件: {where_condition}")
+            
+        if where_condition:
+            query += f" WHERE {where_condition}"
+            logger.info(f"最终添加的WHERE条件: {where_condition}")
         
         # 添加ORDER BY主键
         if primary_keys:
@@ -725,12 +830,12 @@ class TableComparator:
             if not comparison_fields:
                 logger.error("没有找到可对比的字段")
                 raise ValueError("没有找到可对比的字段")
-
+            
             # 构建查询语句
             logger.info("构建查询语句")
             query1 = self.build_query(comparison_fields, self.table1, 1)
             query2 = self.build_query(comparison_fields, self.table2, 2)
-
+            
             # 执行查询
             logger.info("执行查询1")
             cursor1 = self.db1.execute_query(query1)
@@ -741,7 +846,7 @@ class TableComparator:
             cursor2 = self.db2.execute_query(query2)
             rows2 = cursor2.fetchall()
             logger.info(f"查询2返回 {len(rows2)} 行数据")
-
+            
             # 准备结果
             result = {
                 'fields': comparison_fields,
@@ -752,7 +857,7 @@ class TableComparator:
                 'table1_fields': fields1,  # 添加表1的所有字段
                 'table2_fields': fields2   # 添加表2的所有字段
             }
-
+            
             # 将行数据转换为字典列表以便比较
             logger.info(f"将行数据转换为字典列表")
             dict_rows1 = [dict(zip(comparison_fields, row)) for row in rows1]
@@ -763,14 +868,14 @@ class TableComparator:
             primary_keys2 = self.db2.get_primary_keys(self.table2)
             common_primary_keys = list(set(primary_keys1) & set(primary_keys2))
             
-            # 如果两个表都有主键，且主键字段一致，则按主键进行匹配对比
-            if common_primary_keys:
+            # 如果两个表都有主键，且主键字段一致，并且主键字段在比较字段中，则按主键进行匹配对比
+            if common_primary_keys and all(pk in comparison_fields for pk in common_primary_keys):
                 logger.info(f"使用主键 {common_primary_keys} 进行匹配对比")
                 result['row_differences'] = self._compare_rows_by_primary_key(
                     dict_rows1, dict_rows2, common_primary_keys, comparison_fields)
             else:
                 # 否则按行位置进行对比
-                logger.info("没有共同主键，按行位置进行对比")
+                logger.info("没有共同主键或主键不在比较字段中，按行位置进行对比")
                 result['row_differences'] = self._compare_rows_by_position(
                     dict_rows1, dict_rows2, comparison_fields)
             
@@ -782,7 +887,7 @@ class TableComparator:
                     'count': diff_count,
                     'message': f'共有{diff_count}行存在数据差异'
                 })
-
+            
             logger.info("表对比完成")
             return result
 
@@ -1089,7 +1194,9 @@ def main():
     parser.add_argument('--table2', required=True, help='第二个表名')
     parser.add_argument('--fields', action=CommaSeparatedArgsAction, help='指定要对比的字段，多个字段用逗号分隔（默认对比所有字段）')
     parser.add_argument('--exclude', action=CommaSeparatedArgsAction, help='指定要排除的字段，多个字段用逗号分隔')
-    parser.add_argument('--where', help='WHERE条件')
+    parser.add_argument('--where', help='两个表通用的WHERE条件')
+    parser.add_argument('--where1', help='第一个表的WHERE条件')
+    parser.add_argument('--where2', help='第二个表的WHERE条件')
     parser.add_argument('--create-sample', action='store_true', help='创建示例数据库')
     parser.add_argument('--detailed', action='store_true', help='显示详细差异信息')
     parser.add_argument('--csv-report', help='生成CSV格式的详细差异报告到指定文件')
@@ -1187,7 +1294,6 @@ def main():
             target_db_adapter.connect(**connect_params)
         
         # 创建对比器实例
-        logger.info("创建表对比器实例")
         comparator = TableComparator(source_db_adapter, target_db_adapter)
         comparator.set_tables(args.table1, args.table2)
         
@@ -1197,8 +1303,13 @@ def main():
         if args.exclude:
             comparator.set_exclude_fields(args.exclude)
             
+        # 设置WHERE条件
         if args.where:
             comparator.set_where_condition(args.where)
+        if args.where1:
+            comparator.set_where_condition1(args.where1)
+        if args.where2:
+            comparator.set_where_condition2(args.where2)
 
         # 执行对比
         print(f"开始对比表 {args.table1} 和 {args.table2}...")
@@ -1311,7 +1422,15 @@ def main():
         
     except Exception as e:
         logger.error(f"执行出错: {str(e)}", exc_info=True)
-        print(f"执行出错: {str(e)}")
+        # 当表不存在时，确保错误信息在控制台输出
+        error_msg = str(e)
+        if "表" in error_msg and "不存在" in error_msg:
+            print(f"错误: {error_msg}")
+        elif "no such table" in error_msg or "doesn't exist" in error_msg or "not found" in error_msg:
+            # 处理英文错误信息
+            print(f"错误: {error_msg}")
+        else:
+            print(f"执行出错: {str(e)}")
         exit(1)
 
 
@@ -1337,6 +1456,8 @@ def run_comparison(
     fields: List[str] = None,
     exclude: List[str] = None,
     where: str = None,
+    where1: str = None,
+    where2: str = None,
     csv_report: str = None
 ) -> Dict[str, Any]:
     """
@@ -1362,7 +1483,9 @@ def run_comparison(
     :param table2: 第二个表名
     :param fields: 指定要对比的字段列表
     :param exclude: 指定要排除的字段列表
-    :param where: WHERE条件字符串
+    :param where: WHERE条件字符串（两个表通用）
+    :param where1: 第一个表的WHERE条件字符串
+    :param where2: 第二个表的WHERE条件字符串
     :param csv_report: CSV报告输出文件路径
     :return: 对比结果字典
     """
@@ -1432,6 +1555,13 @@ def run_comparison(
         
     if where:
         comparator.set_where_condition(where)
+        
+    # 添加对表特定WHERE条件的支持
+    if where1:
+        comparator.set_where_condition1(where1)
+        
+    if where2:
+        comparator.set_where_condition2(where2)
 
     # 执行对比
     logger.info(f"开始对比表 {table1} 和 {table2}")

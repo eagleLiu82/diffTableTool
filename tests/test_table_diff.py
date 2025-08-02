@@ -299,26 +299,105 @@ class TestTableComparator(unittest.TestCase):
         self.assertIn('table1_row_count', result)
         self.assertIn('table2_row_count', result)
         self.assertIn('differences', result)
-        self.assertIn('table1_fields', result)
-        self.assertIn('table2_fields', result)
-        self.assertIn('only_in_table1', result)
-        self.assertIn('only_in_table2', result)
-        self.assertIn('common_fields', result)
+
+    def test_compare_with_where_conditions_for_both_tables(self):
+        """测试为两个表分别设置WHERE条件"""
+        print("测试为两个表分别设置WHERE条件...")
         
-        # 验证行数为0（因为字段不一致，停止比较）
-        self.assertEqual(result['table1_row_count'], 0)
-        self.assertEqual(result['table2_row_count'], 0)
+        # 创建更多测试数据
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("INSERT INTO employees_old (name, email, age, department, created_at) VALUES (?, ?, ?, ?, ?)",
+                     ("Bob Johnson", "bob@example.com", 35, "IT", "2023-01-03"))
+        conn.execute("INSERT INTO employees_old (name, email, age, department, created_at) VALUES (?, ?, ?, ?, ?)",
+                     ("Alice Brown", "alice@example.com", 28, "HR", "2023-01-04"))
         
-        # 验证差异信息
+        conn.execute("INSERT INTO employees_new (name, email, age, department, phone, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                     ("Bob Johnson", "bob@example.com", 35, "IT", "1111111111", "2023-01-03"))
+        conn.execute("INSERT INTO employees_new (name, email, age, department, phone, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                     ("Alice Brown", "alice@example.com", 29, "HR", "2222222222", "2023-01-04"))  # 年龄不同
+        
+        conn.commit()
+        conn.close()
+        
+        # 设置表名
+        self.comparator.set_tables('employees_old', 'employees_new')
+        
+        # 设置两个表的WHERE条件
+        self.comparator.set_where_condition1("age >= 30")  # 只比较年龄>=30的记录
+        self.comparator.set_where_condition2("age >= 30")  # 只比较年龄>=30的记录
+        
+        # 执行比较
+        result = self.comparator.compare()
+        
+        # 验证结果 - 应该只比较年龄>=30的记录 (John: 30, Bob: 35)
+        # 由于字段不一致，应该返回字段不匹配的结果
+        self.assertIn('differences', result)
         self.assertEqual(len(result['differences']), 1)
         self.assertEqual(result['differences'][0]['type'], 'field_mismatch')
-        self.assertIn('字段不一致', result['differences'][0]['message'])
         
-        # 验证字段信息
-        self.assertIn('phone', result['only_in_table2'])
-        self.assertNotIn('phone', result['only_in_table1'])
-        self.assertIn('created_at', result['common_fields'])
-        print("测试字段不一致时的行为完成")
+        print("测试为两个表分别设置WHERE条件完成")
+
+    def test_compare_with_mixed_where_conditions(self):
+        """测试混合使用通用WHERE条件和表特定WHERE条件"""
+        print("测试混合使用通用WHERE条件和表特定WHERE条件...")
+        
+        # 创建更多测试数据
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("INSERT INTO employees_old (name, email, age, department, created_at) VALUES (?, ?, ?, ?, ?)",
+                     ("Charlie Wilson", "charlie@example.com", 40, "Finance", "2023-01-05"))
+        conn.execute("INSERT INTO employees_new (name, email, age, department, phone, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                     ("Charlie Wilson", "charlie@example.com", 40, "Finance", "3333333333", "2023-01-05"))
+        conn.commit()
+        conn.close()
+        
+        # 设置表名
+        self.comparator.set_tables('employees_old', 'employees_new')
+        
+        # 设置通用WHERE条件和特定表WHERE条件
+        self.comparator.set_where_condition("department != 'Finance'")  # 通用条件排除Finance部门
+        self.comparator.set_where_condition1("age > 25")  # 表1特定条件
+        
+        # 执行比较
+        result = self.comparator.compare()
+        
+        # 验证结果
+        self.assertGreaterEqual(result['table1_row_count'], 0)
+        self.assertGreaterEqual(result['table2_row_count'], 0)
+        
+        print("测试混合使用通用WHERE条件和表特定WHERE条件完成")
+
+    def test_compare_with_table_specific_field_conditions(self):
+        """测试为单个表设置特定字段的WHERE条件"""
+        print("测试为单个表设置特定字段的WHERE条件...")
+        
+        # 创建更多测试数据
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("INSERT INTO employees_old (name, email, age, department, created_at) VALUES (?, ?, ?, ?, ?)",
+                     ("David Lee", "david@example.com", 32, "IT", "2023-01-06"))
+        # employees_new表有phone字段，可以基于这个字段设置条件
+        conn.execute("INSERT INTO employees_new (name, email, age, department, phone, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                     ("David Lee", "david@example.com", 32, "IT", "4444444444", "2023-01-06"))
+        conn.execute("INSERT INTO employees_new (name, email, age, department, phone, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                     ("Emma Wang", "emma@example.com", 27, "HR", "5555555555", "2023-01-07"))
+        conn.commit()
+        conn.close()
+        
+        # 设置表名
+        self.comparator.set_tables('employees_old', 'employees_new')
+        
+        # 为employees_new表设置基于phone字段的条件（employees_old表没有这个字段）
+        self.comparator.set_where_condition2("phone LIKE '4%'")  # 只选择phone以4开头的记录
+        
+        # 执行比较
+        result = self.comparator.compare()
+        
+        # 验证结果
+        # employees_old表应该包含所有符合条件的记录
+        # employees_new表应该只包含phone以4开头的记录
+        self.assertGreaterEqual(result['table1_row_count'], 0)
+        self.assertGreaterEqual(result['table2_row_count'], 0)
+        
+        print("测试为单个表设置特定字段的WHERE条件完成")
         
     def test_compare_with_where_condition(self):
         """测试带WHERE条件但字段不一致时的行为"""

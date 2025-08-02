@@ -23,7 +23,7 @@ class TableDiffGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("数据库表对比工具")
-        self.root.geometry("900x700")
+        self.root.geometry("1000x800")  # 增大窗口尺寸
         
         # 创建变量
         self.setup_variables()
@@ -64,6 +64,9 @@ class TableDiffGUI:
         self.fields = tk.StringVar()
         self.exclude = tk.StringVar()
         self.where_condition = tk.StringVar()
+        # 添加两个表的独立WHERE条件
+        self.where_condition1 = tk.StringVar()
+        self.where_condition2 = tk.StringVar()
         
         # 其他参数
         self.csv_report = tk.StringVar()
@@ -114,7 +117,10 @@ class TableDiffGUI:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(1, weight=1)
+        main_frame.rowconfigure(0, weight=1)  # Notebook权重
+        main_frame.rowconfigure(1, weight=0)  # 按钮框架权重（不扩展）
+        main_frame.rowconfigure(2, weight=2)  # 结果区域权重
+        main_frame.rowconfigure(3, weight=0)  # 进度条权重（不扩展）
         
         # 创建Notebook用于分隔不同部分
         notebook = ttk.Notebook(main_frame)
@@ -242,15 +248,25 @@ class TableDiffGUI:
         ttk.Label(parent, text="多个字段用逗号分隔").grid(row=3, column=2, sticky=tk.W, padx=(5, 0))
         
         # WHERE条件
-        ttk.Label(parent, text="WHERE条件:").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Label(parent, text="通用WHERE条件:").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
         ttk.Entry(parent, textvariable=self.where_condition).grid(row=4, column=1, columnspan=2, 
                                                                   sticky=(tk.W, tk.E), padx=(5, 0), pady=(0, 5))
         
+        # 表1的WHERE条件
+        ttk.Label(parent, text="表1 WHERE条件:").grid(row=5, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Entry(parent, textvariable=self.where_condition1).grid(row=5, column=1, columnspan=2, 
+                                                                   sticky=(tk.W, tk.E), padx=(5, 0), pady=(0, 5))
+        
+        # 表2的WHERE条件
+        ttk.Label(parent, text="表2 WHERE条件:").grid(row=6, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Entry(parent, textvariable=self.where_condition2).grid(row=6, column=1, columnspan=2, 
+                                                                   sticky=(tk.W, tk.E), padx=(5, 0), pady=(0, 5))
+        
         # CSV报告
-        ttk.Label(parent, text="CSV报告:").grid(row=5, column=0, sticky=tk.W, pady=(0, 5))
-        ttk.Entry(parent, textvariable=self.csv_report).grid(row=5, column=1, sticky=(tk.W, tk.E), 
+        ttk.Label(parent, text="CSV报告:").grid(row=7, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Entry(parent, textvariable=self.csv_report).grid(row=7, column=1, sticky=(tk.W, tk.E), 
                                                              padx=(5, 0), pady=(0, 5))
-        ttk.Button(parent, text="浏览", command=self.browse_csv_file).grid(row=5, column=2, sticky=tk.W, 
+        ttk.Button(parent, text="浏览", command=self.browse_csv_file).grid(row=7, column=2, sticky=tk.W, 
                                                                            padx=(5, 0))
         
     def setup_styles(self):
@@ -317,6 +333,8 @@ class TableDiffGUI:
             "fields": self.fields.get(),
             "exclude": self.exclude.get(),
             "where_condition": self.where_condition.get(),
+            "where_condition1": self.where_condition1.get(),
+            "where_condition2": self.where_condition2.get(),
             "csv_report": self.csv_report.get()
         }
         
@@ -367,6 +385,8 @@ class TableDiffGUI:
                 self.fields.set(config.get("fields", ""))
                 self.exclude.set(config.get("exclude", ""))
                 self.where_condition.set(config.get("where_condition", ""))
+                self.where_condition1.set(config.get("where_condition1", ""))
+                self.where_condition2.set(config.get("where_condition2", ""))
                 self.csv_report.set(config.get("csv_report", ""))
                 
                 # 更新界面
@@ -397,7 +417,7 @@ class TableDiffGUI:
             if self.exclude.get().strip():
                 exclude_list = [f.strip() for f in self.exclude.get().split(",")]
                 
-            # 调用对比函数
+            
             result = run_comparison(
                 source_db_type=self.source_db_type.get(),
                 source_db_path=self.source_db_path.get() if self.source_db_type.get() == "sqlite" else None,
@@ -418,6 +438,8 @@ class TableDiffGUI:
                 fields=fields_list,
                 exclude=exclude_list,
                 where=self.where_condition.get(),
+                where1=self.where_condition1.get(),
+                where2=self.where_condition2.get(),
                 csv_report=self.csv_report.get()
             )
             
@@ -491,6 +513,8 @@ class TableDiffGUI:
         self.progress.stop()
         self.result_text.delete(1.0, tk.END)
         self.result_text.insert(tk.END, f"执行出错: {error_msg}\n")
+        # 同时显示错误弹窗
+        messagebox.showerror("执行出错", f"执行出错: {error_msg}")
 
 
 def main():

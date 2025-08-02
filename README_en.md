@@ -1,22 +1,23 @@
-# Database Table Comparison Tool
+# Database Table Diff Tool
 
-A powerful tool for comparing data differences between two tables in a database, supporting SQLite, MySQL, PostgreSQL, Oracle, and MSSQL.
+A tool for comparing data differences between two tables in a database, supporting SQLite, MySQL, PostgreSQL, Oracle, and MSSQL.
 
 ## Features
 
-- Multi-database support: SQLite, MySQL, PostgreSQL, Oracle, MSSQL
-- Field specification or exclusion for comparison
-- WHERE condition filtering
+- Supports multiple databases: SQLite, MySQL, PostgreSQL, Oracle, MSSQL
+- Can specify fields to compare or exclude specific fields
+- Supports adding WHERE conditions for filtering
+- Supports setting WHERE conditions for each table separately
 - Intelligent handling of table structure differences
 - Detailed difference reports
-- Automatic handling of query ordering issues to ensure result consistency
-- CSV format detailed difference reports
-- Cross-database comparison support (e.g., SQLite vs MySQL, MySQL vs PostgreSQL, Oracle vs MSSQL, etc.)
-- Backward compatibility: by default, source and target databases are the same
-- Field mismatch detection with comparison stopping when source and target table fields don't match
-- Both Graphical User Interface (GUI) and Command Line Interface (CLI) support
+- Automatic handling of query order issues to ensure result consistency
+- Generate detailed difference reports in CSV format
+- Supports cross-database type comparison (e.g. SQLite with MySQL, MySQL with PostgreSQL, Oracle with MSSQL, etc.)
+- Backward compatible: source and target databases are the same by default
+- When the source and target table fields are inconsistent, display the differences and stop the comparison
+- Supports graphical user interface (GUI) and command line interface (CLI)
 - GUI defaults to PostgreSQL database type
-- In GUI, source database configuration automatically syncs to target database configuration (unless manually modified)
+- In GUI, source database configuration is automatically synchronized to target database configuration (unless target configuration is manually modified)
 
 ## Installation
 
@@ -38,26 +39,43 @@ pip install pymssql
 
 ## Usage
 
-### Graphical Interface
+### Graphical User Interface (GUI)
 
-To start the GUI version, you can use either of the following methods:
+The tool provides a graphical user interface that can be started in the following ways:
 
 ```bash
-# Start GUI with --gui parameter
+# Start GUI interface
 table_diff --gui
 
-# Or start GUI using Python script
-python table_diff.py --gui
+# Or
+python table_diff_gui.py
 ```
 
-The graphical interface provides an intuitive operation mode with the following features:
+The GUI interface contains the following main functional areas:
 
-1. Default database type is PostgreSQL
-2. Source database configuration automatically syncs to target database configuration, simplifying input for same database configurations
-3. Convenient configuration of database connection parameters, table names, fields, and other options
-4. Supports switching between different tabs while preserving entered content
-5. View comparison results
-6. Supports saving and loading configuration files (JSON format)
+1. **Database Configuration Area**: Configure connection parameters for source and target databases
+2. **Table Comparison Parameters Area**: Set table names, fields, excluded fields, and WHERE conditions to compare
+3. **Operation Area**: Perform comparisons, save/load configurations, generate reports, etc.
+4. **Results Display Area**: Display comparison results
+
+GUI interface supports the following features:
+
+- Automatically synchronize source database configuration to target database configuration (unless target configuration is manually modified)
+- WHERE conditions can be set separately for each table
+- Support for saving and loading configuration files (JSON format)
+- Support for generating detailed difference reports in CSV format
+- Support for graphical configuration of all command line parameters
+
+In the "Comparison Parameters" area of the GUI, you can set the following parameters:
+
+- **Table Name**: Names of the two tables to compare
+- **Specify Fields**: List of fields to compare, multiple fields separated by commas
+- **Exclude Fields**: List of fields to exclude, multiple fields separated by commas
+- **General WHERE Condition**: WHERE condition used by both tables
+- **Table 1 WHERE Condition**: WHERE condition applied to the first table only
+- **Table 2 WHERE Condition**: WHERE condition applied to the second table only
+
+This allows you to flexibly set different filtering conditions for each table, including filtering on fields that exist in only one table.
 
 ### Command Line Interface
 
@@ -154,23 +172,30 @@ table_diff --source-db-path database.db --table1 users_old --table2 users_new --
 table_diff --source-db-path database.db --table1 users_old --table2 users_new --exclude "created_at,updated_at"
 ```
 
-### Add WHERE Conditions
+### Add WHERE conditions
 
-```bash
-# Add WHERE condition for filtering
+```
+# Add WHERE conditions for filtering
 table_diff --source-db-path database.db --table1 users_old --table2 users_new --where "age > 18"
+```
+
+### Set WHERE conditions for each table separately
+
+```
+# Set WHERE conditions for each table separately
+table_diff --source-db-path database.db --table1 users_old --table2 users_new --where1 "age > 18" --where2 "status = 'active'"
 ```
 
 ### Show Detailed Differences
 
-```bash
+```
 # Show detailed row difference information
 table_diff --source-db-path database.db --table1 users_old --table2 users_new --detailed
 ```
 
 ### Generate Detailed Report
 
-```bash
+```
 # Generate CSV format detailed difference report
 table_diff --source-db-path database.db --table1 users_old --table2 users_new --detailed --csv-report report.csv
 ```
@@ -183,7 +208,7 @@ The CSV report will include the following fields:
 
 ### Create Sample Database
 
-```bash
+```
 # Create sample database for testing
 table_diff --create-sample --source-db-path sample.db
 ```
@@ -192,7 +217,7 @@ table_diff --create-sample --source-db-path sample.db
 
 When two tables don't have exactly the same fields, the tool will display field differences and stop the comparison process. This helps you quickly identify structural differences:
 
-```bash
+```
 # When comparing two tables with inconsistent fields, output similar to the following will be displayed:
 # Table users_old and users_new have inconsistent fields
 # Detailed information includes:
@@ -308,6 +333,8 @@ The tool supports two database connection configuration methods:
 | --fields | Fields to compare, multiple fields separated by commas (defaults to all fields) | No |
 | --exclude-fields | Fields to exclude, multiple fields separated by commas | No |
 | --where | WHERE condition | No |
+| --where1 | WHERE condition for the first table | No |
+| --where2 | WHERE condition for the second table | No |
 | --detailed | Show detailed difference information | No |
 | --csv-report | Generate CSV format detailed difference report to specified file | No |
 | --create-sample | Create sample database | No |
@@ -365,7 +392,7 @@ table_diff --source-db-type postgresql --source-host localhost --source-port 543
 
 ### Oracle Example
 
-```bash
+```
 # Connect to Oracle database using SID
 table_diff --source-db-type oracle --source-host localhost --source-port 1521 --source-user system --source-password password --source-database ORCL --table1 employees_2022 --table2 employees_2023
 
@@ -379,7 +406,7 @@ table_diff --source-db-type oracle --source-host oracle-host --source-port 1521 
 
 ### MSSQL Example
 
-```bash
+```
 # Connect to MSSQL database
 table_diff --source-db-type mssql --source-host localhost --source-port 1433 --source-user sa --source-password StrongPassword123 --source-database TestDB --table1 employees_2022 --table2 employees_2023
 
@@ -407,23 +434,25 @@ The CSV report contains detailed information about all differences, with one dif
 
 ### TableComparator Class
 
-Core comparison class, providing the following methods:
+Core comparison class with the following methods:
 
-- `set_tables(table1, table2)`: Set tables to compare
-- `set_fields(fields)`: Set fields to compare
-- `set_exclude_fields(exclude_fields)`: Set fields to exclude
-- `set_where_condition(where_condition)`: Set WHERE condition
-- `compare()`: Execute comparison and return results
-- `generate_csv_report(result, output_file)`: Generate CSV format detailed difference report
+- `set_tables(table1, table2)`: Set the tables to compare
+- `set_fields(fields)`: Set the fields to compare
+- `set_exclude_fields(exclude_fields)`: Set the fields to exclude
+- `set_where_condition(where_condition)`: Set the general WHERE condition (used by both tables)
+- `set_where_condition1(where_condition)`: Set the WHERE condition for the first table
+- `set_where_condition2(where_condition)`: Set the WHERE condition for the second table
+- `compare()`: Perform the comparison and return the results
+- `generate_csv_report(result, output_file)`: Generate a detailed difference report in CSV format
 
 ### run_comparison Function
 
-Programming interface function that allows direct calling of table comparison functionality in code:
+Programming interface function that allows direct invocation of table comparison functionality in code:
 
 ```python
 from table_diff import run_comparison
 
-# Basic usage (tables in same database)
+# Basic usage (tables in the same database)
 result = run_comparison(
     source_db_type='sqlite',
     source_db_path='/path/to/database.db',
@@ -445,7 +474,7 @@ result = run_comparison(
     table2='users'
 )
 
-# Using field filtering and CSV report
+# Using field filtering and CSV reports
 result = run_comparison(
     source_db_type='sqlite',
     source_db_path='/path/to/database.db',
@@ -453,6 +482,16 @@ result = run_comparison(
     table2='users_new',
     fields=['name', 'email'],
     csv_report='differences.csv'
+)
+
+# Using table-specific WHERE conditions
+result = run_comparison(
+    source_db_type='sqlite',
+    source_db_path='/path/to/database.db',
+    table1='users_old',
+    table2='users_new',
+    where1='age > 18',
+    where2='status = "active"'
 )
 ```
 
@@ -514,3 +553,40 @@ pip install table-diff-tool[mssql]
 # Install support for all databases
 pip install table-diff-tool[mysql,postgresql,oracle,mssql]
 ```
+
+## Contributing
+
+Issues and Pull Requests are welcome.
+
+### Committing Code
+
+The project provides two scripts for committing code changes, which automatically exclude JSON configuration files:
+
+1. Python script version: `commit_changes.py`
+2. Bash script version: `commit.sh`
+
+Usage:
+
+```bash
+# Using Python script
+python commit_changes.py "Commit message"
+
+# Using Bash script
+./commit.sh "Commit message"
+```
+
+These scripts automatically exclude JSON configuration files (such as diff_conf.json) to avoid committing sensitive configuration information to the code repository.
+
+The scripts support the following options:
+
+```bash
+# Commit only, no push
+python commit_changes.py --no-push "Commit message"
+
+# Push to GitHub only
+python commit_changes.py --github-only "Commit message"
+
+# Push to Gitee only
+python commit_changes.py --gitee-only "Commit message"
+```
+
