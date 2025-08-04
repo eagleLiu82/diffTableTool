@@ -18,6 +18,7 @@ A tool for comparing data differences between two tables in a database, supporti
 - Supports graphical user interface (GUI) and command line interface (CLI)
 - GUI defaults to PostgreSQL database type
 - In GUI, source database configuration is automatically synchronized to target database configuration (unless target configuration is manually modified)
+- Supports data comparison through custom SQL queries
 
 ## Installation
 
@@ -55,8 +56,9 @@ The GUI interface contains the following main functional areas:
 
 1. **Database Configuration Area**: Configure connection parameters for source and target databases
 2. **Table Comparison Parameters Area**: Set table names, fields, excluded fields, and WHERE conditions to compare
-3. **Operation Area**: Perform comparisons, save/load configurations, generate reports, etc.
-4. **Results Display Area**: Display comparison results
+3. **Query Comparison Area**: Enter custom SQL queries for data comparison
+4. **Operation Area**: Perform comparisons, save/load configurations, generate reports, etc.
+5. **Results Display Area**: Display comparison results
 
 GUI interface supports the following features:
 
@@ -65,6 +67,7 @@ GUI interface supports the following features:
 - Support for saving and loading configuration files (JSON format)
 - Support for generating detailed difference reports in CSV format
 - Support for graphical configuration of all command line parameters
+- Support for data comparison through custom SQL queries
 
 In the "Comparison Parameters" area of the GUI, you can set the following parameters:
 
@@ -75,7 +78,13 @@ In the "Comparison Parameters" area of the GUI, you can set the following parame
 - **Table 1 WHERE Condition**: WHERE condition applied to the first table only
 - **Table 2 WHERE Condition**: WHERE condition applied to the second table only
 
-This allows you to flexibly set different filtering conditions for each table, including filtering on fields that exist in only one table.
+In the "Query Comparison" area of the GUI, you can:
+
+- Enter two custom SQL query statements for comparison
+- Query statements can come from the same or different databases
+- The column structure of query results needs to be consistent for comparison
+
+This allows you to flexibly set different filtering conditions for each table, including filtering on fields that exist in only one table, or perform more complex data comparisons through custom queries.
 
 ### Command Line Interface
 

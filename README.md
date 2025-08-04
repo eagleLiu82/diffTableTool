@@ -18,6 +18,7 @@
 - 支持图形用户界面（GUI）和命令行界面（CLI）
 - GUI默认使用PostgreSQL数据库类型
 - GUI中源数据库配置会自动同步到目标数据库配置（除非手动修改目标配置）
+- 支持通过自定义SQL查询进行数据对比
 
 ## 安装
 
@@ -56,8 +57,9 @@ GUI界面包含以下主要功能区域：
 
 1. **数据库配置区域**：配置源数据库和目标数据库的连接参数
 2. **表对比参数区域**：设置要对比的表名、字段、排除字段和WHERE条件
-3. **操作区域**：执行对比、保存/加载配置、生成报告等操作
-4. **结果展示区域**：显示对比结果
+3. **查询对比区域**：输入自定义SQL查询进行数据对比
+4. **操作区域**：执行对比、保存/加载配置、生成报告等操作
+5. **结果展示区域**：显示对比结果
 
 GUI界面支持以下特性：
 
@@ -66,6 +68,7 @@ GUI界面支持以下特性：
 - 支持保存和加载配置文件（JSON格式）
 - 支持生成CSV格式的详细差异报告
 - 支持所有命令行参数的图形化配置
+- 支持通过自定义SQL查询进行数据对比
 
 在GUI的"对比参数"区域，您可以设置以下参数：
 
@@ -76,7 +79,13 @@ GUI界面支持以下特性：
 - **表1 WHERE条件**：仅应用于第一个表的WHERE条件
 - **表2 WHERE条件**：仅应用于第二个表的WHERE条件
 
-这样，您就可以灵活地为每个表设置不同的过滤条件，包括对只存在于一个表中的字段进行过滤。
+在GUI的"查询对比"区域，您可以：
+
+- 输入两个自定义的SQL查询语句进行对比
+- 查询语句可以来自相同或不同的数据库
+- 查询结果的列结构需要一致才能进行对比
+
+这样，您就可以灵活地为每个表设置不同的过滤条件，包括对只存在于一个表中的字段进行过滤，或者通过自定义查询进行更复杂的数据对比。
 
 ### 命令行方式
 
@@ -451,7 +460,7 @@ CSV报告包含所有差异的详细信息，每行一个差异记录，包括�
 
 编程接口函数，允许在代码中直接调用表对比功能：
 
-```python
+```
 from table_diff import run_comparison
 
 # 基本用法（同一数据库中的表）
@@ -523,7 +532,7 @@ result = run_comparison(
 
 根据不同数据库类型，您可能需要安装额外的依赖包：
 
-```bash
+```
 # MySQL支持
 pip install mysql-connector-python
 
@@ -539,7 +548,7 @@ pip install pymssql
 
 或者，您可以使用pip的extras功能安装特定数据库的支持：
 
-```bash
+```
 # 安装MySQL支持
 pip install table-diff-tool[mysql]
 
@@ -558,37 +567,6 @@ pip install table-diff-tool[mysql,postgresql,oracle,mssql]
 
 ## 贡献
 
-欢迎提交 Issue 和 Pull Request。
+欢迎提交 Issue 和 Pull Request.
 
-### 提交代码
-
-项目提供了两个脚本用于提交代码变更，它们会自动排除JSON配置文件：
-
-1. Python脚本版本: `commit_changes.py`
-2. Bash脚本版本: `commit.sh`
-
-使用方法：
-
-```bash
-# 使用Python脚本
-python commit_changes.py "提交信息"
-
-# 使用Bash脚本
-./commit.sh "提交信息"
-```
-
-这些脚本会自动排除JSON配置文件（如 diff_conf.json 等），避免将敏感配置信息提交到代码仓库。
-
-脚本支持以下选项：
-
-```bash
-# 只提交不推送
-python commit_changes.py --no-push "提交信息"
-
-# 只推送到GitHub
-python commit_changes.py --github-only "提交信息"
-
-# 只推送到Gitee
-python commit_changes.py --gitee-only "提交信息"
-```
 
