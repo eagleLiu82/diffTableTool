@@ -106,30 +106,33 @@ class MySQLAdapter(DatabaseAdapter):
             port=port,
             user=user,
             password=password,
-            database=database
+            database=database,
+            buffered=True  # 添加buffered参数以避免游标问题
         )
         return self.connection
     
     def get_table_fields(self, table_name: str) -> List[str]:
         logger.info(f"获取MySQL表 {table_name} 的字段")
-        cursor = self.connection.cursor()
+        cursor = self.connection.cursor(buffered=True)  # 使用buffered游标
         cursor.execute(f"DESCRIBE {table_name}")
         fields = [row[0] for row in cursor.fetchall()]
+        cursor.close()  # 关闭游标
         logger.info(f"表 {table_name} 的字段: {fields}")
         return fields
     
     def get_primary_keys(self, table_name: str) -> List[str]:
         """获取MySQL表的主键字段"""
         logger.info(f"获取MySQL表 {table_name} 的主键")
-        cursor = self.connection.cursor()
+        cursor = self.connection.cursor(buffered=True)  # 使用buffered游标
         cursor.execute(f"SHOW KEYS FROM {table_name} WHERE Key_name = 'PRIMARY'")
         primary_keys = [row[4] for row in cursor.fetchall()]  # Column_name列
+        cursor.close()  # 关闭游标
         logger.info(f"表 {table_name} 的主键: {primary_keys}")
         return primary_keys
     
     def execute_query(self, query: str):
         logger.info(f"执行MySQL查询: {query}")
-        cursor = self.connection.cursor()
+        cursor = self.connection.cursor(buffered=True)  # 使用buffered游标
         cursor.execute(query)
         return cursor
     
@@ -836,48 +839,44 @@ class TableComparator:
             query1 = self.build_query(comparison_fields, self.table1, 1)
             query2 = self.build_query(comparison_fields, self.table2, 2)
             
-            # 执行查询
+            # 执行查询获取游标，但不立即获取所有数据
             logger.info("执行查询1")
             cursor1 = self.db1.execute_query(query1)
-            rows1 = cursor1.fetchall()
-            logger.info(f"查询1返回 {len(rows1)} 行数据")
-            
             logger.info("执行查询2")
             cursor2 = self.db2.execute_query(query2)
-            rows2 = cursor2.fetchall()
-            logger.info(f"查询2返回 {len(rows2)} 行数据")
-            
-            # 准备结果
-            result = {
-                'fields': comparison_fields,
-                'table1_row_count': len(rows1),
-                'table2_row_count': len(rows2),
-                'differences': [],
-                'row_differences': [],
-                'table1_fields': fields1,  # 添加表1的所有字段
-                'table2_fields': fields2   # 添加表2的所有字段
-            }
-            
-            # 将行数据转换为字典列表以便比较
-            logger.info(f"将行数据转换为字典列表")
-            dict_rows1 = [dict(zip(comparison_fields, row)) for row in rows1]
-            dict_rows2 = [dict(zip(comparison_fields, row)) for row in rows2]
             
             # 获取主键字段
             primary_keys1 = self.db1.get_primary_keys(self.table1)
             primary_keys2 = self.db2.get_primary_keys(self.table2)
             common_primary_keys = list(set(primary_keys1) & set(primary_keys2))
             
+            # 准备结果
+            result = {
+                'fields': comparison_fields,
+                'table1_row_count': 0,
+                'table2_row_count': 0,
+                'differences': [],
+                'row_differences': [],
+                'table1_fields': fields1,  # 添加表1的所有字段
+                'table2_fields': fields2   # 添加表2的所有字段
+            }
+            
             # 如果两个表都有主键，且主键字段一致，并且主键字段在比较字段中，则按主键进行匹配对比
             if common_primary_keys and all(pk in comparison_fields for pk in common_primary_keys):
                 logger.info(f"使用主键 {common_primary_keys} 进行匹配对比")
-                result['row_differences'] = self._compare_rows_by_primary_key(
-                    dict_rows1, dict_rows2, common_primary_keys, comparison_fields)
+                comparison_result = self._compare_rows_by_primary_key_streaming(
+                    cursor1, cursor2, common_primary_keys, comparison_fields)
+                result['row_differences'] = comparison_result['differences']
+                result['table1_row_count'] = comparison_result['table1_row_count']
+                result['table2_row_count'] = comparison_result['table2_row_count']
             else:
                 # 否则按行位置进行对比
                 logger.info("没有共同主键或主键不在比较字段中，按行位置进行对比")
-                result['row_differences'] = self._compare_rows_by_position(
-                    dict_rows1, dict_rows2, comparison_fields)
+                comparison_result = self._compare_rows_by_position_streaming(
+                    cursor1, cursor2, comparison_fields)
+                result['row_differences'] = comparison_result['differences']
+                result['table1_row_count'] = comparison_result['table1_row_count']
+                result['table2_row_count'] = comparison_result['table2_row_count']
             
             # 添加差异计数信息
             diff_count = len(result['row_differences'])
@@ -895,32 +894,41 @@ class TableComparator:
             logger.error(f"对比过程中发生错误: {str(e)}", exc_info=True)
             raise RuntimeError(f"对比过程中发生错误: {str(e)}")
             
-    def _compare_rows_by_primary_key(self, rows1: List[Dict], rows2: List[Dict], 
-                                     primary_keys: List[str], comparison_fields: List[str]) -> List[Dict]:
+    def _compare_rows_by_primary_key_streaming(self, cursor1, cursor2, 
+                                     primary_keys: List[str], comparison_fields: List[str]) -> dict:
         """
-        基于主键对比两组行数据
+        基于主键流式对比两组行数据
         
-        :param rows1: 第一组行数据
-        :param rows2: 第二组行数据
+        :param cursor1: 第一个表的游标
+        :param cursor2: 第二个表的游标
         :param primary_keys: 主键字段列表
         :param comparison_fields: 需要对比的字段列表
-        :return: 差异列表
+        :return: 包含差异列表和行数统计的字典
         """
-        logger.info("基于主键进行行数据对比")
+        logger.info("基于主键进行流式行数据对比")
         
-        # 创建基于主键的字典映射
-        rows1_dict = {}
-        for row in rows1:
-            key = tuple(row[pk] for pk in primary_keys)
-            rows1_dict[key] = row
+        # 获取所有数据并按主键排序
+        rows1_data = {}
+        rows2_data = {}
+        
+        # 读取第一个表的数据
+        row_count1 = 0
+        for row in cursor1:
+            row_dict = dict(zip(comparison_fields, row))
+            key = tuple(row_dict[pk] for pk in primary_keys)
+            rows1_data[key] = row_dict
+            row_count1 += 1
             
-        rows2_dict = {}
-        for row in rows2:
-            key = tuple(row[pk] for pk in primary_keys)
-            rows2_dict[key] = row
+        # 读取第二个表的数据
+        row_count2 = 0
+        for row in cursor2:
+            row_dict = dict(zip(comparison_fields, row))
+            key = tuple(row_dict[pk] for pk in primary_keys)
+            rows2_data[key] = row_dict
+            row_count2 += 1
             
         # 收集所有主键值
-        all_keys = set(rows1_dict.keys()) | set(rows2_dict.keys())
+        all_keys = set(rows1_data.keys()) | set(rows2_data.keys())
         logger.info(f"总共 {len(all_keys)} 个唯一主键值")
         
         # 对比每一行
@@ -933,8 +941,8 @@ class TableComparator:
         only_in_table2 = []  # 目标表中有但源表中没有的记录
         
         for key in sorted(all_keys):  # 按主键排序，保证输出顺序一致
-            row1 = rows1_dict.get(key)
-            row2 = rows2_dict.get(key)
+            row1 = rows1_data.get(key)
+            row2 = rows2_data.get(key)
             
             if row1 is None:
                 # 只在表2中存在
@@ -970,52 +978,70 @@ class TableComparator:
             row_number += 1
             
         logger.info(f"基于主键对比完成，发现数据不同的记录 {len(diff_rows)} 条，源表独有记录 {len(only_in_table1)} 条，目标表独有记录 {len(only_in_table2)} 条")
-        return differences
+        return {
+            'differences': differences,
+            'table1_row_count': row_count1,
+            'table2_row_count': row_count2
+        }
 
-    def _compare_rows_by_position(self, rows1: List[Dict], rows2: List[Dict], 
-                                  comparison_fields: List[str]) -> List[Dict]:
+    def _compare_rows_by_position_streaming(self, cursor1, cursor2, 
+                                  comparison_fields: List[str]) -> dict:
         """
-        基于行位置对比两组行数据
+        基于行位置流式对比两组行数据
         
-        :param rows1: 第一组行数据
-        :param rows2: 第二组行数据
+        :param cursor1: 第一个表的游标
+        :param cursor2: 第二个表的游标
         :param comparison_fields: 需要对比的字段列表
-        :return: 差异列表
+        :return: 包含差异列表和行数统计的字典
         """
-        logger.info("基于行位置进行行数据对比")
+        logger.info("基于行位置进行流式行数据对比")
         differences = []
         
+        rows1_list = list(cursor1)
+        rows2_list = list(cursor2)
+        
+        row_count1 = len(rows1_list)
+        row_count2 = len(rows2_list)
+        
         # 处理共同行数范围内的对比
-        for i in range(min(len(rows1), len(rows2))):
-            row_diff = self._compare_single_row(rows1[i], rows2[i], i+1, comparison_fields)
+        for i in range(min(row_count1, row_count2)):
+            row1_dict = dict(zip(comparison_fields, rows1_list[i]))
+            row2_dict = dict(zip(comparison_fields, rows2_list[i]))
+            row_diff = self._compare_single_row(row1_dict, row2_dict, i+1, comparison_fields)
             if row_diff:
                 row_diff['type'] = 'different_data'
                 differences.append(row_diff)
         
         # 处理多余的行（如果有的话）
-        if len(rows1) != len(rows2):
-            logger.info(f"行数不同: {self.table1}有{len(rows1)}行, {self.table2}有{len(rows2)}行")
+        if row_count1 != row_count2:
+            logger.info(f"行数不同: 表1有{row_count1}行, 表2有{row_count2}行")
             
             # 标记多余行
-            if len(rows1) > len(rows2):
-                for i in range(len(rows2), len(rows1)):
+            if row_count1 > row_count2:
+                for i in range(row_count2, row_count1):
+                    row_dict = dict(zip(comparison_fields, rows1_list[i]))
                     differences.append({
                         'row_number': i+1,
                         'type': 'only_in_table1',
-                        'differences': [{'field': field, 'table1_value': rows1[i][field], 'table2_value': None} 
+                        'differences': [{'field': field, 'table1_value': row_dict[field], 'table2_value': None} 
                                        for field in comparison_fields]
                     })
             else:
-                for i in range(len(rows1), len(rows2)):
+                for i in range(row_count1, row_count2):
+                    row_dict = dict(zip(comparison_fields, rows2_list[i]))
                     differences.append({
                         'row_number': i+1,
                         'type': 'only_in_table2',
-                        'differences': [{'field': field, 'table1_value': None, 'table2_value': rows2[i][field]} 
+                        'differences': [{'field': field, 'table1_value': None, 'table2_value': row_dict[field]} 
                                        for field in comparison_fields]
                     })
         
         logger.info(f"基于行位置对比完成，发现 {len(differences)} 个差异")
-        return differences
+        return {
+            'differences': differences,
+            'table1_row_count': row_count1,
+            'table2_row_count': row_count2
+        }
 
     def _compare_single_row(self, row1: Dict, row2: Dict, row_number: int, 
                             comparison_fields: List[str]) -> Optional[Dict]:

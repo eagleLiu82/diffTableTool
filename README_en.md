@@ -19,6 +19,9 @@ A tool for comparing data differences between two tables in a database, supporti
 - GUI defaults to PostgreSQL database type
 - In GUI, source database configuration is automatically synchronized to target database configuration (unless target configuration is manually modified)
 - Supports data comparison through custom SQL queries
+- **Optimized for large data processing: Uses streaming processing mechanism to effectively reduce memory usage and avoid out-of-memory issues when processing large tables**
+- **Supports comparison of tables with and without primary keys: Performs precise matching comparison based on primary keys, and compares by row position for tables without primary keys**
+- **Comprehensive test coverage: Includes tests for 50+ fields, null value handling, primary key/no primary key scenarios, and large data volume processing**
 
 ## Installation
 
@@ -284,14 +287,25 @@ The tool generates the following types of difference reports:
 
 ## Testing
 
-The project includes a comprehensive test suite that can be run as follows:
+The project includes comprehensive test cases to ensure functionality correctness and stability:
+
+1. **Basic Functionality Tests**: Tests basic table comparison functionality
+2. **Large Data Volume Tests**: Verifies streaming processing performance with large data volumes
+3. **Multi-field Test**: Verifies that the tool can correctly handle table comparisons with a large number of fields (tested with 50+ fields)
+4. **Null Value Handling Tests**: Ensures correct handling of NULL value comparisons
+5. **Primary Key/No Primary Key Tests**: Verifies the comparison logic for tables with and without primary keys
+6. **Memory Efficiency Tests**: Ensures that streaming processing does not cause memory leaks
+
+The test suite can be run as follows:
 
 ```bash
 # Run all tests
-python tests/run_tests.py
+python -m tests.run_tests
 
-# Run specific test
-python tests/test_table_diff.py
+# Run specific tests
+python -m tests.test_streaming_comparison  # Streaming processing tests
+python -m tests.test_primary_key_comparison  # Primary key related tests
+python -m tests.test_large_field_count  # Large field count tests
 ```
 
 ## Parameter Description
@@ -438,6 +452,17 @@ When differences are found, the tool displays:
 - Specific fields with different values in each row (when using `--detailed` parameter)
 
 The CSV report contains detailed information about all differences, with one difference record per row, including row number, column name, and values in both tables.
+
+## Streaming Processing Mechanism
+
+This tool uses a streaming processing mechanism to handle large data table comparisons, effectively reducing memory usage. Its working principle is as follows:
+
+1. **Batch Reading**: Reads data from the database in batches instead of loading all data into memory at once
+2. **Primary Key Sorting**: If the table has a primary key, data is read in primary key order to ensure comparison accuracy
+3. **No Primary Key Handling**: For tables without primary keys, comparison is performed by row position
+4. **Memory Optimization**: Only keeps the minimum dataset required for current comparison in memory
+
+This mechanism enables the tool to handle table comparisons of millions of rows or even larger scale without running out of memory.
 
 ## Class Description
 

@@ -6,6 +6,7 @@
 - 提交修复
 - 添加新功能
 - 改进文档
+- 添加测试用例
 
 ## 如何贡献
 
@@ -26,6 +27,25 @@
 3. 提交您的更改 (`git commit -m 'Add some amazing feature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 开启一个Pull Request
+
+### 测试
+
+为了确保代码质量，我们要求所有贡献都包含适当的测试：
+
+1. 为新功能添加单元测试
+2. 确保所有现有测试通过
+3. 对于涉及性能改进的更改，请添加专门的性能测试
+4. 测试文件应放在 `tests/` 目录下
+5. 使用命名约定 `test_feature_name.py` 为测试文件命名
+
+运行测试：
+```
+# 运行所有测试
+cd tests && python run_tests.py
+
+# 运行特定测试
+cd tests && python test_streaming_comparison.py
+```
 
 ### 代码规范
 
