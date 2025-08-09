@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 import logging
 import sys
 import os
+import importlib
 
 # 新增 Union 类型用于 run_comparison 参数类型提示
 
@@ -498,6 +499,138 @@ class MSSQLAdapter(DatabaseAdapter):
             self.connection.close()
 
 
+class DMAdapter(DatabaseAdapter):
+    """达梦数据库适配器"""
+    
+    def __init__(self):
+        self.connection = None
+    
+    def connect(self, **kwargs):
+        try:
+            dmPython = importlib.import_module('dmPython')
+        except ImportError:
+            raise ImportError("需要安装dmPython库，参考达梦官方文档进行安装")
+        
+        host = kwargs.get('host', 'localhost')
+        port = kwargs.get('port', 5236)
+        user = kwargs.get('user')
+        password = kwargs.get('password')
+        database = kwargs.get('database')
+        
+        logger.info(f"连接到达梦数据库: {host}:{port}, 用户: {user}, 数据库: {database}")
+        
+        # 构建连接字符串
+        self.connection = dmPython.connect(
+            user=user,
+            password=password,
+            server=host,
+            port=port,
+            schema=database
+        )
+        return self.connection
+    
+    def get_table_fields(self, table_name: str) -> List[str]:
+        logger.info(f"获取达梦数据库表 {table_name} 的字段")
+        try:
+            dmPython = importlib.import_module('dmPython')
+            cursor = self.connection.cursor()
+            
+            # 处理可能包含模式的表名
+            if '.' in table_name:
+                parts = table_name.split('.')
+                if len(parts) == 2:
+                    schema, table = parts
+                else:
+                    schema, table = None, table_name
+            else:
+                schema, table = None, table_name
+                
+            if schema:
+                cursor.execute("""
+                    SELECT COLUMN_NAME 
+                    FROM ALL_TAB_COLUMNS 
+                    WHERE TABLE_NAME = UPPER(?) AND OWNER = UPPER(?)
+                    ORDER BY COLUMN_ID
+                """, (table, schema))
+            else:
+                cursor.execute("""
+                    SELECT COLUMN_NAME 
+                    FROM USER_TAB_COLUMNS 
+                    WHERE TABLE_NAME = UPPER(?)
+                    ORDER BY COLUMN_ID
+                """, (table,))
+                
+            fields = [row[0] for row in cursor.fetchall()]
+            logger.info(f"表 {table_name} 的字段: {fields}")
+            return fields
+        except Exception as e:
+            # 检查是否是表不存在的错误
+            error_msg = str(e).lower()
+            if "not exist" in error_msg or "not found" in error_msg or "invalid" in error_msg:
+                raise ValueError(f"表 '{table_name}' 不存在")
+            else:
+                raise RuntimeError(f"获取表 '{table_name}' 字段信息时出错: {str(e)}")
+    
+    def get_primary_keys(self, table_name: str) -> List[str]:
+        """获取达梦数据库表的主键字段"""
+        logger.info(f"获取达梦数据库表 {table_name} 的主键")
+        try:
+            dmPython = importlib.import_module('dmPython')
+            cursor = self.connection.cursor()
+            
+            # 处理可能包含模式的表名
+            if '.' in table_name:
+                parts = table_name.split('.')
+                if len(parts) == 2:
+                    schema, table = parts
+                else:
+                    schema, table = None, table_name
+            else:
+                schema, table = None, table_name
+                
+            if schema:
+                cursor.execute("""
+                    SELECT COLS.COLUMN_NAME
+                    FROM ALL_CONSTRAINTS CONS
+                    JOIN ALL_CONS_COLUMNS COLS ON CONS.CONSTRAINT_NAME = COLS.CONSTRAINT_NAME AND CONS.OWNER = COLS.OWNER
+                    WHERE COLS.TABLE_NAME = UPPER(?) AND COLS.OWNER = UPPER(?) AND CONS.CONSTRAINT_TYPE = 'P'
+                    ORDER BY COLS.POSITION
+                """, (table, schema))
+            else:
+                cursor.execute("""
+                    SELECT COLUMN_NAME
+                    FROM USER_CONS_COLUMNS
+                    WHERE TABLE_NAME = UPPER(?) AND CONSTRAINT_NAME IN (
+                        SELECT CONSTRAINT_NAME 
+                        FROM USER_CONSTRAINTS 
+                        WHERE CONSTRAINT_TYPE = 'P'
+                    )
+                    ORDER BY POSITION
+                """, (table,))
+                
+            primary_keys = [row[0] for row in cursor.fetchall()]
+            logger.info(f"表 {table_name} 的主键: {primary_keys}")
+            return primary_keys
+        except Exception as e:
+            # 检查是否是表不存在的错误
+            error_msg = str(e).lower()
+            if "not exist" in error_msg or "not found" in error_msg or "invalid" in error_msg:
+                raise ValueError(f"表 '{table_name}' 不存在")
+            else:
+                raise RuntimeError(f"获取表 '{table_name}' 主键信息时出错: {str(e)}")
+    
+    def execute_query(self, query: str):
+        logger.info(f"执行达梦数据库查询: {query}")
+        cursor = self.connection.cursor()
+        cursor.execute(query)
+        return cursor
+    
+    def close(self):
+        if self.connection:
+            logger.info("关闭达梦数据库连接")
+            self.connection.close()
+
+
 def get_database_adapter(db_type: str) -> DatabaseAdapter:
     """根据数据库类型获取对应的适配器"""
     logger.info(f"获取数据库适配器: {db_type}")
@@ -506,7 +639,8 @@ def get_database_adapter(db_type: str) -> DatabaseAdapter:
         'mysql': MySQLAdapter,
         'postgresql': PostgreSQLAdapter,
         'oracle': OracleAdapter,
-        'mssql': MSSQLAdapter
+        'mssql': MSSQLAdapter,
+        'dm': DMAdapter
     }
     
     if db_type not in adapters:
@@ -1195,7 +1329,7 @@ def main():
     
     parser = argparse.ArgumentParser(description='数据库表对比工具')
     # 源数据库参数
-    parser.add_argument('--source-db-type', choices=['sqlite', 'mysql', 'postgresql', 'oracle', 'mssql'], 
+    parser.add_argument('--source-db-type', choices=['sqlite', 'mysql', 'postgresql', 'oracle', 'mssql', 'dm'], 
                        default='sqlite', help='源数据库类型 (默认: sqlite)')
     parser.add_argument('--source-db-path', help='源SQLite数据库文件路径')
     parser.add_argument('--source-host', help='源数据库主机地址')
@@ -1206,7 +1340,7 @@ def main():
     parser.add_argument('--source-service-name', help='Oracle源数据库服务名')
     
     # 目标数据库参数
-    parser.add_argument('--target-db-type', choices=['sqlite', 'mysql', 'postgresql', 'oracle', 'mssql'], 
+    parser.add_argument('--target-db-type', choices=['sqlite', 'mysql', 'postgresql', 'oracle', 'mssql', 'dm'], 
                        help='目标数据库类型 (默认: 与源数据库相同)')
     parser.add_argument('--target-db-path', help='目标SQLite数据库文件路径')
     parser.add_argument('--target-host', help='目标数据库主机地址')
@@ -1489,14 +1623,14 @@ def run_comparison(
     """
     以编程方式运行表对比工具
 
-    :param source_db_type: 源数据库类型 ('sqlite', 'mysql', 'postgresql', 'oracle', 'mssql')
+    :param source_db_type: 源数据库类型 ('sqlite', 'mysql', 'postgresql', 'oracle', 'mssql', 'dm')
     :param source_db_path: 源SQLite数据库文件路径（仅用于SQLite）
     :param source_host: 源数据库主机地址（非SQLite使用）
     :param source_port: 源数据库端口（非SQLite使用）
     :param source_user: 源数据库用户名（非SQLite使用）
     :param source_password: 源数据库密码（非SQLite使用）
     :param source_database: 源数据库名（非SQLite使用）
-    :param target_db_type: 目标数据库类型 ('sqlite', 'mysql', 'postgresql', 'oracle', 'mssql')，默认与源数据库相同
+    :param target_db_type: 目标数据库类型 ('sqlite', 'mysql', 'postgresql', 'oracle', 'mssql', 'dm')，默认与源数据库相同
     :param target_db_path: 目标SQLite数据库文件路径（仅用于SQLite）
     :param target_host: 目标数据库主机地址（非SQLite使用）
     :param target_port: 目标数据库端口（非SQLite使用）

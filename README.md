@@ -111,6 +111,9 @@ table_diff --source-db-type oracle --source-host localhost --source-port 1521 --
 
 # 对比MSSQL数据库中的两个表
 table_diff --source-db-type mssql --source-host localhost --source-port 1433 --source-user sa --source-password your_password --source-database your_database --table1 users_old --table2 users_new
+
+# 对比达梦数据库中的两个表
+table_diff --source-db-type dm --source-host localhost --source-port 5236 --source-user SYSDBA --source-password your_password --source-database your_database --table1 users_old --table2 users_new
 ```
 
 或者使用Python脚本方式：
@@ -130,6 +133,9 @@ python table_diff.py --source-db-type oracle --source-host localhost --source-po
 
 # 对比MSSQL数据库中的两个表
 python table_diff.py --source-db-type mssql --source-host localhost --source-port 1433 --source-user sa --source-password your_password --source-database your_database --table1 users_old --table2 users_new
+
+# 对比达梦数据库中的两个表
+python table_diff.py --source-db-type dm --source-host localhost --source-port 5236 --source-user SYSDBA --source-password your_password --source-database your_database --table1 users_old --table2 users_new
 ```
 
 ### 跨数据库比较
@@ -141,6 +147,15 @@ python table_diff.py --source-db-type mssql --source-host localhost --source-por
 table_diff --source-db-type sqlite --source-db-path /path/to/local.db \
            --target-db-type mysql --target-host localhost --target-port 3306 \
            --target-user root --target-password your_password --target-database your_database \
+           --table1 users --table2 users
+
+# 对比MySQL和达梦数据库中的表
+table_diff --source-db-type mysql --source-host source_host --source-port 3306 \
+           --source-user source_user --source-password source_password \
+           --source-database source_database \
+           --target-db-type dm --target-host target_host --target-port 5236 \
+           --target-user target_user --target-password target_password \
+           --target-database target_database \
            --table1 users --table2 users
 
 # 对比MySQL数据库中的两个表（不同实例）
@@ -591,7 +606,7 @@ pip install table-diff-tool[mysql,postgresql,oracle,mssql]
 
 运行测试：
 
-```bash
+```
 # 运行所有测试
 python -m tests.test_streaming_comparison
 

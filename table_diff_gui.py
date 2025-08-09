@@ -387,7 +387,7 @@ class TableDiffGUI:
         # 数据库类型选择
         ttk.Label(parent, text="数据库类型:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
         db_type_combo = ttk.Combobox(parent, textvariable=getattr(self, f"{db_type_prefix}_db_type"), 
-                                    values=["sqlite", "mysql", "postgresql"], state="readonly")
+                                    values=["sqlite", "mysql", "postgresql", "oracle", "mssql", "dm"], state="readonly")
         db_type_combo.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=(0, 5), padx=(5, 0))
         db_type_combo.bind('<<ComboboxSelected>>', lambda e: self.on_db_type_change(db_type_prefix))
         
@@ -527,6 +527,12 @@ class TableDiffGUI:
                     port_var.set("3306")
                 elif db_type == "postgresql":
                     port_var.set("5432")
+                elif db_type == "oracle":
+                    port_var.set("1521")
+                elif db_type == "mssql":
+                    port_var.set("1433")
+                elif db_type == "dm":
+                    port_var.set("5236")
                 
     def browse_file(self, db_type_prefix):
         file_path = filedialog.askopenfilename(
