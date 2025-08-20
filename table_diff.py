@@ -1556,13 +1556,20 @@ def main():
                             for diff in row_diff['differences']:
                                 print(f"    {diff['field']}: {diff['table2_value']}")
             else:
-                # 显示第一条差异的简要信息
+                # 显示第一条差异的简要信息，包括主键信息
                 first_diff = result['row_differences'][0]
                 multiple_diff_info = [diff for diff in result['differences'] if diff['type'] == 'multiple_row_diff']
+                
+                # 构造主键信息
+                key_info = ""
+                if 'key' in first_diff:
+                    key_str = ', '.join([f"{k}={v}" for k, v in first_diff['key'].items()])
+                    key_info = f" 主键({key_str})"
+                
                 if multiple_diff_info:
-                    print(f"\n发现第{first_diff['row_number']}行存在数据差异，共{multiple_diff_info[0]['count']}行有差异 (使用 --detailed 参数查看详细信息)")
+                    print(f"\n发现第{first_diff['row_number']}行存在数据差异{key_info}，共{multiple_diff_info[0]['count']}行有差异 (使用 --detailed 参数查看详细信息)")
                 else:
-                    print(f"\n发现第{first_diff['row_number']}行存在数据差异 (使用 --detailed 参数查看详细信息)")
+                    print(f"\n发现第{first_diff['row_number']}行存在数据差异{key_info} (使用 --detailed 参数查看详细信息)")
         elif not result['differences']:
             print("未发现明显差异")
 
